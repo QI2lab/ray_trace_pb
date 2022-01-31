@@ -775,6 +775,15 @@ class refracting_surface(surface):
         rays_intersection = self.get_intersect(rays, n1)
         # compute normals
         normals = self.get_normal(rays_intersection)
+
+        # check ray was coming from the "front side"
+        # i.e. the ray has to be coming from the correct 2*pi area of space
+        ray_normals = rays[:, 3:6]
+        cos_ray_input = np.sum(ray_normals * np.expand_dims(self.input_axis, axis=0), axis=1)
+        with np.errstate(invalid="ignore"):
+            not_incoming = cos_ray_input < 0
+        rays_intersection[not_incoming] = np.nan
+
         # do refraction
         rays_refracted = refract_snell(rays_intersection, normals, n1, n2)
 
@@ -861,6 +870,7 @@ class flat_surface(refracting_surface):
                         [0, 0, 0, 0, 1]])
         return mat
 
+
     def get_seidel_third_order_fns(self, n1, n2, s, sp, t, tp, h, H):
         if s != 0:
             K = n1 * (-1 / s)  # abbe invariant for image/obj point
@@ -886,6 +896,7 @@ class flat_surface(refracting_surface):
                            ])
 
         return coeffs
+
 
     def draw(self, ax):
         # take Y = 0 portion of surface
@@ -1243,7 +1254,7 @@ class perfect_relay(refracting_surface):
 
 
 class perfect_lens(refracting_surface):
-    def __init__(self, focal_len, center, normal, aperture_rad, is_aperture_stop=False):
+    def __init__(self, focal_len, center, normal, alpha, is_aperture_stop=False):
         """
         This lens has no length. The center position defines the principal planes.
         The normal should point the same direction rays propagate through the system
@@ -1256,8 +1267,10 @@ class perfect_lens(refracting_surface):
         todo: not sure what is best way to handle that in general. Should it be at lens
         """
         self.focal_len = focal_len
+        self.alpha = alpha
         self.center = np.array(center).squeeze()
         self.normal = np.array(normal).squeeze()
+        aperture_rad = focal_len * np.sin(self.alpha) # only correct up to factor of n1
         super().__init__(normal, normal, center, aperture_rad, is_aperture_stop)
 
     def get_normal(self):
@@ -1338,8 +1351,10 @@ class perfect_lens(refracting_surface):
         elif rays.ndim == 2:
             rays = np.expand_dims(rays, axis=0)
 
+        # #####################################
         # get the three surfaces we will need in our calculation: front focal plane (i.e. before the lens),
         # lens surface, back focal plane (i.e. after the lens)
+        # #####################################
         front_focal_pt = self.center - self.normal * self.focal_len * n1
         front_focal_plane = flat_surface(front_focal_pt, self.normal, self.aperture_rad)
 
@@ -1347,13 +1362,16 @@ class perfect_lens(refracting_surface):
 
         back_focal_pt = self.center + self.normal * self.focal_len * n2
 
+        # #####################################
         # find position rays intersect the object plane (front focal plane)
         # if rays are already in front of the object plane, propagate them backwards to reach it
+        # #####################################
         rays_obj_plane, _ = propagate_ray2plane(rays[-1], front_focal_plane.normal, front_focal_plane.center,
-                                                n=n1,
-                                                exclude_backward_propagation=False)
+                                                n=n1, exclude_backward_propagation=False)
 
-        # beginning constructing rays as they appear in the BFP (i.e. after the lens)
+        # #####################################
+        # construct rays as they appear in the BFP (i.e. after the lens)
+        # #####################################
         rays_bfp = np.zeros(rays_obj_plane.shape)
         # keep same wavelength
         rays_bfp[:, 7] = rays[-1, :, 7]
@@ -1362,17 +1380,19 @@ class perfect_lens(refracting_surface):
         # get unit vectors pointing along rays
         ray_dirs = rays_obj_plane[:, 3:6]
         # n0 are the unit vectors pointing along rays after projecting out the portion along the lens normal
-        n0 = ray_dirs - np.expand_dims(np.sum(ray_dirs * np.expand_dims(self.normal, axis=0), axis=1), axis=1) * \
-                  np.expand_dims(self.normal, axis=0)
-        to_normalize = np.sum(n0, axis=1) != 0
+        ray_normal_dot = np.sum(ray_dirs * np.expand_dims(self.normal, axis=0), axis=1)
+        n0 = ray_dirs - np.expand_dims(ray_normal_dot, axis=1) * np.expand_dims(self.normal, axis=0)
+
+        # only normalize non-zero rays
+        to_normalize = np.sum(np.abs(n0), axis=1) > 1e-13
         n0[to_normalize] = n0[to_normalize] / np.expand_dims(np.linalg.norm(n0[to_normalize], axis=1), axis=1)
 
         # BFP positions found from the analog of n*fl*sin(theta)
         # in perfect lens assumption, gives Fourier transform in BFP. Since the above expression
         # holds for the on-axis point, also works for off axis points
         sin_t1 = np.sum(n0 * ray_dirs, axis=1)
-        rays_bfp[:, :3] = n1 * self.focal_len * np.expand_dims(sin_t1, axis=1) * n0 + \
-                          np.expand_dims(back_focal_pt, axis=0)
+        h2 = n1 * self.focal_len * np.expand_dims(sin_t1, axis=1) * n0
+        rays_bfp[:, :3] = h2 + np.expand_dims(back_focal_pt, axis=0)
 
         # output angles
         # r0 is unit vector in object plane and h1 is "height"
@@ -1383,8 +1403,9 @@ class perfect_lens(refracting_surface):
 
         # get signed height. Note that this is only required for correctly determining the phase
         # the position can be determined from h1 and r0
-        h1_sign = np.sign(np.sum(r0 * n0, axis=1))
-        h1_sign[h1_sign == 0] = 1
+        with np.errstate(invalid="ignore"):
+            h1_sign = np.sign(np.sum(r0 * n0, axis=1))
+            h1_sign[h1_sign == 0] = 1
 
         # compute angles
         # get unit vector for input positions, r0
@@ -1394,6 +1415,15 @@ class perfect_lens(refracting_surface):
             rays_bfp[:, 3:6] = -np.expand_dims(sin_t2, axis=1) * r0 + \
                                 np.expand_dims(cos_t2, axis=1) * np.expand_dims(self.normal, axis=0)
 
+        # #####################################
+        # exclude points which are outside of the
+        # #####################################
+        with np.errstate(invalid="ignore"):
+            input_angle_too_steep = np.abs(sin_t1) > np.sin(self.alpha)
+            output_angle_too_steep = np.abs(sin_t2) > np.sin(self.alpha)
+            rays_bfp[np.logical_or(input_angle_too_steep, output_angle_too_steep)] = np.nan
+
+        # #####################################
         # set phase at BfP. There are three contributions:
         # (1) the initial phase
         # (2) the phase the lens imparts. This can be calculated by realizing the final phases must be equal
@@ -1403,20 +1433,25 @@ class perfect_lens(refracting_surface):
         # note that h1 is not the signed height. To get the signed height, we must check if n0 and r0 point
         # in the same direction (positive height) or opposite directions (negative height)
         # (3) the phase from propagating distance n1*f + n2*f
+        # #####################################
         rays_bfp[:, 6] = rays_obj_plane[:, 6] - \
                          rays[-1, :, 7] * n1 * h1 * h1_sign * sin_t1 + \
                          rays[-1, :, 7] * (n1**2 * self.focal_len + n2**2 * self.focal_len)
 
+        # #####################################
         # propagate rays from bfp backwards to lens position
         # note: from this direction don't care about aperture
+        # #####################################
         rays_after_lens, _ = propagate_ray2plane(rays_bfp, lens_plane.normal, lens_plane.center,
                                                  n=n2, exclude_backward_propagation=False)
 
         # also need position that the rays would normally intersect lens position
         rays_before_lens, _ = propagate_ray2plane(rays[-1], lens_plane.normal, lens_plane.center)
 
-        # output ray area is all the rays that were passed in and two new surface
+        # #####################################
+        # output ray array is all the rays that were passed in and two new surface
         # (1) right before the lens and (2) right after
+        # #####################################
         rays_out = np.concatenate((rays, np.stack((rays_before_lens, rays_after_lens), axis=0)), axis=0)
 
         return rays_out
