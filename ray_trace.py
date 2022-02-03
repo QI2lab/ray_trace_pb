@@ -448,6 +448,9 @@ def get_collimated_rays(pt, displacement_max, n_disps, wavelength, nphis=1, norm
     @param normal: normal of plane
     @return:
     """
+    if np.abs(np.linalg.norm(normal) - 1) > 1e-12:
+        raise ValueError("normal must be a normalized vector")
+
     # build all angles and offsets and put in 1d arrays
     phis = np.arange(nphis) * 2*np.pi / nphis
     offs = np.linspace(-displacement_max, displacement_max, n_disps)
@@ -473,15 +476,19 @@ def get_collimated_rays(pt, displacement_max, n_disps, wavelength, nphis=1, norm
     # construct rays
     rays = np.zeros((n_disps * nphis, 8))
     # n1*cos(phi) + n2*sin(phi) is unit vector pointing to ray origin
-    rays[:, 0] = pt[0] + (n1[0] * np.cos(pps) + n2[0] * np.sin(pps)) * oos
-    rays[:, 1] = pt[1] + (n1[1] * np.cos(pps) + n2[1] * np.sin(pps)) * oos
-    rays[:, 2] = pt[2] + (n1[2] * np.cos(pps) + n2[2] * np.sin(pps)) * oos
+    # rays[:, 0] = pt[0] + (n1[0] * np.cos(pps) + n2[0] * np.sin(pps)) * oos
+    # rays[:, 1] = pt[1] + (n1[1] * np.cos(pps) + n2[1] * np.sin(pps)) * oos
+    # rays[:, 2] = pt[2] + (n1[2] * np.cos(pps) + n2[2] * np.sin(pps)) * oos
+    rays[:, 0] = pt[0] + np.cos(pps) * oos
+    rays[:, 1] = pt[1] + np.sin(pps) * oos
+    rays[:, 2] = pt[2]
     # rays are parallel
     rays[:, 3] = normal[0]
     rays[:, 4] = normal[1]
     rays[:, 5] = normal[2]
-    # assume phase is the same on starting plane
-    rays[:, 6] = 0
+    # assume phase is the same on plane perpendiular to the normal
+    rays[:, 6] = np.sum(rays[:, 0:3] * rays[:, 3:6], axis=1)
+    # wavelength
     rays[:, 7] = 2 * np.pi / wavelength
 
     return rays
@@ -585,8 +592,9 @@ def propagate_ray2plane(rays, normal, center, n=1, exclude_backward_propagation=
     ts = - ((xo - xc) * nx + (yo - yc) * ny + (zo - zc) * nz) / (dx * nx + dy * ny + dz * nz)
 
     # determine if this is a forward or backward propagation for the ray
-    prop_direction = np.ones(rays.shape[0], dtype=int)
-    prop_direction[ts < 0] = -1
+    with np.errstate(invalid="ignore"):
+        prop_direction = np.ones(rays.shape[0], dtype=int)
+        prop_direction[ts < 0] = -1
 
     # find intersection points
     prop_dist_vect = np.stack((dx, dy, dz), axis=1) * np.expand_dims(ts, axis=1)
@@ -1340,11 +1348,17 @@ class perfect_lens(refracting_surface):
 
         In practice, this expression is not implemented directly. Rather, equal phase is imposed at the focus
 
+        When considering the vectorial model, we instead talk about the ray position vector r1, the ray position
+        vector relative to the focal point r1', the ray unit vector s1, and the unit vector formed by projecting
+        the optical axis direction n from s1 call it s1' = (s1 - n\cdot s1) / |s_1 - n\cdot s1|. In terms
+        of these quantities,
+        r2' = n1 * f * (s1' \cdot s1) * s1'
+        s2' = - |r1'| / (n2 * f) * (r1' / |r1'|)
+
         :param ray_array: nsurfaces x nrays x 8
         :param n1: index of refraction on first side of surface
         :param n2: index of refraction on second side of surface
         """
-        # todo: set phase in a reasonable way. Probably should say phase depends only on input and output position
 
         if rays.ndim == 1:
             rays = np.expand_dims(rays, axis=(0, 1))
@@ -1366,57 +1380,64 @@ class perfect_lens(refracting_surface):
         # find position rays intersect the object plane (front focal plane)
         # if rays are already in front of the object plane, propagate them backwards to reach it
         # #####################################
-        rays_obj_plane, _ = propagate_ray2plane(rays[-1], front_focal_plane.normal, front_focal_plane.center,
-                                                n=n1, exclude_backward_propagation=False)
+        rays_ffp, _ = propagate_ray2plane(rays[-1], front_focal_plane.normal, front_focal_plane.center,
+                                          n=n1, exclude_backward_propagation=False)
+
+        # #####################################
+        # compute geometric data (height and angle) of rays in ffp relative to the lens axis
+        # #####################################
+
+        # get unit vectors pointing along input rays
+        s1 = rays_ffp[:, 3:6]
+        # n0 are the unit vectors pointing along rays after projecting out the portion along the lens normal
+        ray_normal_dot = np.sum(s1 * np.expand_dims(self.normal, axis=0), axis=1)
+        s1_perp_uvec = s1 - np.expand_dims(ray_normal_dot, axis=1) * np.expand_dims(self.normal, axis=0)
+
+        # only normalize non-zero rays
+        with np.errstate(invalid="ignore"):
+            # to_normalize = np.sum(np.abs(n0), axis=1) > 1e-13
+            # n0[to_normalize] = n0[to_normalize] / np.expand_dims(np.linalg.norm(n0[to_normalize], axis=1), axis=1)
+            s1_perp_norm = np.linalg.norm(s1_perp_uvec, axis=1)
+            to_normalize = s1_perp_norm > 1e-12
+            s1_perp_uvec[to_normalize] = s1_perp_uvec[to_normalize] / np.expand_dims(s1_perp_norm[to_normalize], axis=1)
+
+        # compute the vectorial "height" of rays above optical axis
+        # r1_vec is the vector in the FFP pointing to the position of the ray
+        # i.e. the ray position after projecting out the optical axis direction
+        r1_vec = rays_ffp[:, 0:3] - front_focal_pt
+        r1_norm = np.linalg.norm(r1_vec, axis=1)
+
+        # get unit vector
+        to_normalize = r1_norm != 0
+        r1_uvec = np.array(r1_vec, copy=True)
+        r1_uvec[to_normalize] = r1_uvec[to_normalize] / np.expand_dims(np.linalg.norm(r1_uvec[to_normalize], axis=1), axis=1)
+
+        # sine of angle between incoming ray and the optical axis
+        sin_t1 = np.sum(s1_perp_uvec * s1, axis=1)
 
         # #####################################
         # construct rays as they appear in the BFP (i.e. after the lens)
         # #####################################
-        rays_bfp = np.zeros(rays_obj_plane.shape)
-        # keep same wavelength
+        rays_bfp = np.zeros(rays_ffp.shape)
+
+        # keep same wavelengths
         rays_bfp[:, 7] = rays[-1, :, 7]
 
-        # compute output positions
-        # get unit vectors pointing along rays
-        ray_dirs = rays_obj_plane[:, 3:6]
-        # n0 are the unit vectors pointing along rays after projecting out the portion along the lens normal
-        ray_normal_dot = np.sum(ray_dirs * np.expand_dims(self.normal, axis=0), axis=1)
-        n0 = ray_dirs - np.expand_dims(ray_normal_dot, axis=1) * np.expand_dims(self.normal, axis=0)
-
-        # only normalize non-zero rays
-        to_normalize = np.sum(np.abs(n0), axis=1) > 1e-13
-        n0[to_normalize] = n0[to_normalize] / np.expand_dims(np.linalg.norm(n0[to_normalize], axis=1), axis=1)
-
-        # BFP positions found from the analog of n*fl*sin(theta)
-        # in perfect lens assumption, gives Fourier transform in BFP. Since the above expression
-        # holds for the on-axis point, also works for off axis points
-        sin_t1 = np.sum(n0 * ray_dirs, axis=1)
-        h2 = n1 * self.focal_len * np.expand_dims(sin_t1, axis=1) * n0
+        # compute ray positions in BFP. These depend only on the input direction and are found by
+        # vectorial position = h * n0 where h = n*fl*sin(theta_1)
+        h2 = n1 * self.focal_len * np.expand_dims(sin_t1, axis=1) * s1_perp_uvec
         rays_bfp[:, :3] = h2 + np.expand_dims(back_focal_pt, axis=0)
 
         # output angles
-        # r0 is unit vector in object plane and h1 is "height"
-        r0 = rays_obj_plane[:, 0:3] - front_focal_pt
-        h1 = np.linalg.norm(r0, axis=1)
-        to_normalize = np.sum(r0, axis=1) != 0
-        r0[to_normalize] = r0[to_normalize] / np.expand_dims(np.linalg.norm(r0[to_normalize], axis=1), axis=1)
-
-        # get signed height. Note that this is only required for correctly determining the phase
-        # the position can be determined from h1 and r0
-        with np.errstate(invalid="ignore"):
-            h1_sign = np.sign(np.sum(r0 * n0, axis=1))
-            h1_sign[h1_sign == 0] = 1
-
-        # compute angles
         # get unit vector for input positions, r0
         with np.errstate(invalid="ignore"):
-            sin_t2 = h1 / self.focal_len / n2
+            sin_t2 = -r1_norm / self.focal_len / n2
             cos_t2 = np.sqrt(1 - sin_t2**2)
-            rays_bfp[:, 3:6] = -np.expand_dims(sin_t2, axis=1) * r0 + \
-                                np.expand_dims(cos_t2, axis=1) * np.expand_dims(self.normal, axis=0)
+            rays_bfp[:, 3:6] = np.expand_dims(sin_t2, axis=1) * r1_uvec + \
+                               np.expand_dims(cos_t2, axis=1) * np.expand_dims(self.normal, axis=0)
 
         # #####################################
-        # exclude points which are outside of the
+        # exclude points which are outside of the NA of the lens
         # #####################################
         with np.errstate(invalid="ignore"):
             input_angle_too_steep = np.abs(sin_t1) > np.sin(self.alpha)
@@ -1428,14 +1449,16 @@ class perfect_lens(refracting_surface):
         # (1) the initial phase
         # (2) the phase the lens imparts. This can be calculated by realizing the final phases must be equal
         # for a fan of parallel rays (i.e. a plane wave). Since in the initial plane these rays have phases
-        # n1*k*h1*sin_t1, we must subtract this phase here. The rest of the lens phase shift is taken care of
+        # k*n1*h1*sin_t1, we must subtract this phase here. The rest of the lens phase shift is taken care of
         # by enforcing the phases initially being equal in the BFP
         # note that h1 is not the signed height. To get the signed height, we must check if n0 and r0 point
         # in the same direction (positive height) or opposite directions (negative height)
-        # (3) the phase from propagating distance n1*f + n2*f
+        # (3) the phase from propagating distance n1*f + n2*f which is (k*n1)*n1*f + (k*n2)*n2*f
         # #####################################
-        rays_bfp[:, 6] = rays_obj_plane[:, 6] - \
-                         rays[-1, :, 7] * n1 * h1 * h1_sign * sin_t1 + \
+        plane_wave_phase = np.sum(r1_vec * s1, axis=1)
+
+        rays_bfp[:, 6] = rays_ffp[:, 6] - \
+                         rays[-1, :, 7] * n1 * plane_wave_phase + \
                          rays[-1, :, 7] * (n1**2 * self.focal_len + n2**2 * self.focal_len)
 
         # #####################################
