@@ -70,7 +70,7 @@ ns = [n1, 1, 1, 1, 1, 1, n2, n3, 1, 1, 1, 1]
 
 # launch rays and ray trace
 dx = 0.001
-dy = 0.00
+dy = 0.001
 dz = dx * np.tan(theta)
 # dz = 0
 # rays = rt.get_ray_fan([dx, dy, dz], alpha1, 31, wavelength=wavelength, nphis=21)
@@ -85,6 +85,10 @@ rays = rt.ray_trace_system(rays, surfaces, ns)
 rt.plot_rays(rays, surfaces)
 ax = plt.gca()
 ax.axis("equal")
+
+# draw imaging plane
+l = 1
+ax.plot([-np.sin(theta) * l, np.sin(theta) * l], [-np.cos(theta) * l, np.cos(theta) * l], 'k')
 
 # ##################################
 # plot initial angles and remote volume angles
