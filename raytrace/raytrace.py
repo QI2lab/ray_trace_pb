@@ -643,12 +643,16 @@ def dist_pt2plane(pts, normal, center):
 
 
 # display
-def plot_rays(ray_array, surfaces=None, colors=None, **kwargs):
+def plot_rays(ray_array, surfaces=None, colors=None, ax=None, **kwargs):
     """
     :param ray_array: nsurfaces X nrays x 8
     """
-    figh = plt.figure(**kwargs)
-    ax = plt.subplot(1, 1, 1)
+
+    if ax is None:
+        figh = plt.figure(**kwargs)
+        ax = plt.subplot(1, 1, 1)
+    else:
+        figh = ax.get_figure()
 
     if colors is None:
         ax.plot(ray_array[:, :, 2], ray_array[:, :, 0])
@@ -665,7 +669,7 @@ def plot_rays(ray_array, surfaces=None, colors=None, **kwargs):
         for s in surfaces:
             s.draw(ax)
 
-    return figh
+    return figh, ax
 
 
 def plot_spot_diagram(rays, **kwargs):
