@@ -2,7 +2,7 @@
 1/25/2022, Peter T. Brown
 """
 import numpy as np
-import ray_trace as rt
+import raytrace.raytrace as rt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
