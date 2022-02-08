@@ -6,7 +6,7 @@ import raytrace.raytrace as rt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
-wavelength = 0.532
+wavelength = 532e-6
 aperture_rad = 2
 
 # O1
