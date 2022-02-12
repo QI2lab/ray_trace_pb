@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from matplotlib.colors import PowerNorm
 
-plot_results = False
+plot_results = True
 
 # parameters
 wavelength = 532e-6
@@ -123,18 +123,6 @@ for ii in range(npos):
     rays = rt.ray_trace_system(rays, surfaces, ns)
 
     # ##################################
-    # plot ray trace surfaces
-    # ##################################
-    if ii == (npos // 2):
-        rt.plot_rays(rays, surfaces)
-        ax = plt.gca()
-        ax.axis("equal")
-
-        # draw imaging plane
-        l = 1
-        ax.plot([-np.sin(theta) * l, np.sin(theta) * l], [-np.cos(theta) * l, np.cos(theta) * l], 'k')
-
-    # ##################################
     # plot rays in O1 pupil
     # ##################################
     rays_pupil_o1 = rays[4]
@@ -187,7 +175,22 @@ for ii in range(npos):
     # ##################################
     # plot results
     # ##################################
-    if plot_results or ii == (npos // 2):
+    if np.mod(ii, npos // 4) == 0 and plot_results:
+        # ##################################
+        # ray trace
+        # ##################################
+        rt.plot_rays(rays, surfaces)
+        ax = plt.gca()
+        ax.axis("equal")
+        ax.set_title("ray trace, input position = (x, y, z) = (%0.5f, 0, 0)" % xs[ii])
+
+        # draw imaging plane
+        l = 1
+        ax.plot([-np.sin(theta) * l, np.sin(theta) * l], [-np.cos(theta) * l, np.cos(theta) * l], 'k')
+
+        # ##################################
+        # phases in pupil
+        # ##################################
         figh = plt.figure()
         plt.suptitle("input position = (x, y, z) = (%0.5f, 0, 0)" % xs[ii])
         grid = plt.GridSpec(2, 3)
@@ -348,12 +351,14 @@ ax.set_ylabel("Z (um)")
 ax.set_xlim([-len_scale, len_scale])
 ax.set_ylim([-len_scale, len_scale])
 
-# save results in tif
-tifffile.imwrite(Path(r"C:\Users\q2ilab\Desktop\snouty_psf.tif"),
-                 tifffile.transpose_axes(psf_coverslip.astype(np.float32), "ZYX", asaxes="TZCYXS"),
-                 imagej=True,
-                 resolution=(1 / (dx * 1e3), 1 / (dy * 1e3)),
-                 metadata={"Info": "snouty psf, theta = %0.2fdeg" % (theta * 180/np.pi),
-                           "unit": "um", "spacing": (dz * 1e3)})
+# ##################################
+# export results as tif
+# ##################################
+# tifffile.imwrite(Path(r"C:\Users\q2ilab\Desktop\snouty_psf.tif"),
+#                  tifffile.transpose_axes(psf_coverslip.astype(np.float32), "ZYX", asaxes="TZCYXS"),
+#                  imagej=True,
+#                  resolution=(1 / (dx * 1e3), 1 / (dy * 1e3)),
+#                  metadata={"Info": "snouty psf, theta = %0.2fdeg" % (theta * 180/np.pi),
+#                            "unit": "um", "spacing": (dz * 1e3)})
 
 
