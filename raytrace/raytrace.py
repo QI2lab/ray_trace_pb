@@ -22,10 +22,12 @@ here K, L account for any shift between the definition fo hx, n*ux and the natur
 z points to the right, along the optical axis. x points upwards, and y points out of the plane,
 ensuring the coordinate system is right handed
 """
+import copy
 import numpy as np
 import matplotlib.pyplot as plt
+import warnings
 
-# rays
+# analyze optical systems
 def ray_trace_system(rays, surfaces, indices_of_refraction):
     """
     race rays through a system of diffractive optical elements
@@ -50,7 +52,12 @@ def ray_trace_system(rays, surfaces, indices_of_refraction):
 
 def compute_paraxial(initial_dist, surfaces, indices_of_refraction):
     """
-    todo:
+    Generate the ABCD matrix for the entire optical system
+
+    @param initial_dist: distance from the ray launching surface to the first surface in the optical system
+    @param surfaces: list of surfaces in the optical system
+    @param indices_of_refraction: indices of refraction between surfaces
+    @return abcd_mat:
     """
     abcd_mat_list = []
 
@@ -62,13 +69,150 @@ def compute_paraxial(initial_dist, surfaces, indices_of_refraction):
         abcd_mat_list.append(abcd_temp)
 
         if ii < (len(surfaces) - 1):
-            c1 = surfaces[ii].paraxial_center
-            c2 = surfaces[ii + 1].paraxial_center
-            abcd_prop = get_free_space_abcd(np.linalg.norm(c1 - c2), n=indices_of_refraction[ii+1])
+            dist = np.linalg.norm(surfaces[ii].paraxial_center - surfaces[ii + 1].paraxial_center)
+            abcd_prop = get_free_space_abcd(dist, n=indices_of_refraction[ii+1])
             abcd_mat = abcd_prop.dot(abcd_mat)
             abcd_mat_list.append(abcd_prop)
 
     return abcd_mat
+
+
+def get_reversed_system(surfaces, indices_of_refraction):
+    """
+    Create a new optical system where the order of the surfaces is reversed.
+
+    :param list surfaces:
+    :param list n_rev:
+    :return surfaces_rev, n_rev:
+    """
+    surfaces_rev = [copy.deepcopy(surfaces[-ii]) for ii in range(1, len(surfaces) + 1)]
+
+    for ii in range(len(surfaces)):
+        surfaces_rev[ii].input_axis *= -1
+        surfaces_rev[ii].output_axis *= -1
+
+    n_rev = [indices_of_refraction[-ii] for ii in range(1, len(indices_of_refraction) + 1)]
+    return surfaces_rev, n_rev
+
+
+def compute_third_order_seidel(surfaces, indices_of_refraction):
+    # first check where the aperture stop is
+    is_ap_stop = [s.is_aperture_stop for s in surfaces]
+
+    if not np.any(is_ap_stop):
+        raise ValueError("none of the surfaces were labelled as the aperture stop")
+    if np.sum(is_ap_stop) > 1:
+        raise ValueError("more than one of the surfaces was labelled as the aperture stop")
+
+    istop = int(np.where(is_ap_stop)[0])
+
+    # find entrance pupil
+    surfaces_before_stop = surfaces[:istop + 1]
+    ns_before_stop = indices_of_refraction[:istop + 2]
+
+    surfaces_before_stop, ns_before_stop = get_reversed_system(surfaces_before_stop, ns_before_stop)
+
+    # to avoid refracting through the stop again, modify the index of refraction
+    ns_before_stop[0] = ns_before_stop[1]
+
+    s_temp, _ = auto_focus(surfaces_before_stop, ns_before_stop, mode="paraxial")
+    # correct entrance pupil directions
+    entrance_pupil, _ = get_reversed_system([s_temp[-1]], [1, 1])
+    entrance_pupil = entrance_pupil[0]
+
+    # find exit pupil
+    # surfaces_after_stop = surfaces[istop:]
+    # ns_after_stop = indices_of_refraction[istop - 1:]
+    #
+    # s_temp, _ = auto_focus(surfaces_after_stop, ns_after_stop, mode="paraxial")
+    # exit_pupil = s_temp[-1]
+
+    # needed quantities
+    nsurfaces = len(surfaces)
+    aberrations_3rd = np.zeros((nsurfaces, 5))
+    s = np.zeros(nsurfaces) # object points per surface
+    sp = np.zeros(nsurfaces) # image points per surface
+    h = np.zeros(nsurfaces) # h1 = s1 / (t1 - s1) where t = distance from entrance pupil to surface vertex
+    H = np.zeros(nsurfaces) # H1 = t1 / no
+    t = np.zeros(nsurfaces)
+    tp = np.zeros(nsurfaces)
+    d = np.zeros(nsurfaces - 1)
+
+    # initialize values for first surface
+    s[0] = surfaces[0].paraxial_center[2]
+    sp[0] = surfaces[0].solve_img_eqn(s[0], indices_of_refraction[0], indices_of_refraction[1])
+    t[0] = entrance_pupil.paraxial_center[2] - surfaces[0].paraxial_center[2]
+    tp[0] = surfaces[0].solve_img_eqn(t[0], indices_of_refraction[0], indices_of_refraction[1])
+    h[0] = s[0] / (t[0] - s[0])
+    H[0] = t[0] / indices_of_refraction[0]
+
+    # compute subsequent values of image positions and pupil positions
+    for ii in range(1, len(h)):
+        # d[ii] is the distance between ii and ii + 1 surfaces
+        d[ii - 1] = surfaces[ii].paraxial_center[2] - surfaces[ii - 1].paraxial_center[2]
+
+        # new object is previous image relative to new surfaces
+        s[ii] = sp[ii - 1] - d[ii - 1]
+        sp[ii] = surfaces[ii].solve_img_eqn(s[ii], indices_of_refraction[ii], indices_of_refraction[ii + 1])
+        # new pupil is previous image relative to new surfaces
+        t[ii] = tp[ii - 1] - d[ii - 1]
+        tp[ii] = surfaces[ii].solve_img_eqn(t[ii], indices_of_refraction[ii], indices_of_refraction[ii + 1])
+
+        # see Born and Wolf chapter 5.5 eq's (9) and (16)
+        # h[ii] = h[ii - 1] * s[ii] / sp[ii - 1] # recursion has problem if one is zero...
+        h[ii] = s[ii] / (t[ii] - s[ii])
+        #H[ii] = H[ii - 1] * t[ii] / tp[ii - 1]
+        H[ii] = t[ii] / indices_of_refraction[ii]
+
+    # solve for aberrations
+    for ii in range(nsurfaces):
+        aberrations_3rd[ii] = surfaces[ii].get_seidel_third_order_fns(
+                                            indices_of_refraction[ii], indices_of_refraction[ii + 1],
+                                            s[ii], sp[ii], t[ii], tp[ii], h[ii], H[ii])
+
+    return aberrations_3rd
+
+# helper methods for finding focus, cardinal points, etc.
+def auto_focus(surfaces, indices_of_refraction, mode="ray-fan"):
+    """
+    Perform auto-focus operation
+
+    # todo: handle case where optical system extends past focus
+
+    :param list surfaces: list of surfaces, which should start with the surfaces the rays are incident from
+    :param indices_of_refraction: list of indices of refraction betweeen surfaces
+    :param wavelength:
+    :param mode: "ray-fan" or "collimated"
+    :return updated_surfaces, updated_n:
+    """
+    # todo: maybe take sequence of rays with smaller and smaller angles...
+    if mode == "ray-fan":
+        rays_focus = get_ray_fan([0, 0, 0], 1e-9, 3, 1)
+
+        rays_focus = ray_trace_system(rays_focus, surfaces, indices_of_refraction)
+        focus = intersect_rays(rays_focus[-1, 1], rays_focus[-1, 2])[0, 2]
+    elif mode == "paraxial":
+        abcd = compute_paraxial(0, surfaces, indices_of_refraction)
+        # determine what free space propagation matrix we need to use to get total ABCD matrix with B = 0
+        dx = -abcd[0, 1] / abcd[1, 1] * indices_of_refraction[-1]
+        dy = -abcd[2, 3] / abcd[3, 3] * indices_of_refraction[-1]
+
+        if np.abs(dx - dy) >= 1e-12:
+            warnings.warn("dx and dy focus differs")
+
+        focus = surfaces[-1].paraxial_center[2] + 0.5 * (dx + dy) * np.sign(surfaces[-1].input_axis[2])
+
+    elif mode == "collimated":
+        rays_focus = get_collimated_rays([0, 0, 0], 1e-9, 3, 1)
+        rays_focus = ray_trace_system(rays_focus, surfaces, indices_of_refraction)
+        focus = intersect_rays(rays_focus[-1, 1], rays_focus[-1, 2])[0, 2]
+    else:
+        raise ValueError("mode must be 'ray-fan', 'paraxial', or 'collimated' but was '%s'" % mode)
+
+    updated_surfaces = surfaces + [flat_surface([0, 0, focus], surfaces[-1].input_axis, surfaces[-1].aperture_rad)]
+    updated_n = indices_of_refraction + [indices_of_refraction[-1]]
+
+    return updated_surfaces, updated_n
 
 
 def find_paraxial_focus(abcd_mat, n=1):
@@ -90,6 +234,151 @@ def find_paraxial_focus(abcd_mat, n=1):
     return dx, abcd_mat_x, efl_x, dy, abcd_mat_y, efl_y
 
 
+def find_cardinal_points(surfaces, indices_of_refraction, wavelength):
+    """
+    Compute cardinal points from ray tracing very small angles
+
+    # todo: this fails if BFP is within optical system
+    # todo: probably better to write with ABCD matrices...
+
+    :param list surfaces: list of surfaces
+    :param list indices_of_refraction: list of indices of refraction between surfaces
+    :param float wavelength: wavelength
+    :return f1, f2, pp1, pp2, efl1, efl2:
+    """
+    k = 2 * np.pi / wavelength
+
+    # find focal point to right of lens
+    rays = np.array([[0, 0, 0, 0, 0, 1, 0, k], [1e-9, 0, 0, 0, 0, 1, 0, k]])
+    rays = ray_trace_system(rays, surfaces, indices_of_refraction)
+    f2 = intersect_rays(rays[-1, 0], rays[-1, 1])
+
+    # find focal point to left of lens
+    surfaces_rev, n_rev = get_reversed_system(surfaces, indices_of_refraction)
+    # todo: need to ensure rays past last surface...
+    rays = np.array([[0, 0, 1e4, 0, 0, -1, 0, k], [1e-9, 0, 1e4, 0, 0, -1, 0, k]])
+    rays = ray_trace_system(rays, surfaces_rev, n_rev)
+    f1 = intersect_rays(rays[-1, 0], rays[-1, 1])
+
+    # propagate rays from front focal point to collimated to find first principal plane
+    rays_fwd = get_ray_fan(f1, 1e-9, 3, wavelength)
+    rays_fwd = ray_trace_system(rays_fwd, surfaces, indices_of_refraction)
+    pt1 = intersect_rays(rays_fwd[0, 2], rays_fwd[-1, 2])
+    pp1 = pt1[0, 2]
+
+    # effective focal length
+    efl1 = pp1 - f1[0, 2]
+
+    # propagate rays backward from the back focal point to collimated to find the second principal plane
+    surfaces_rev, n_rev = get_reversed_system(surfaces, indices_of_refraction)
+
+    rays_back = get_ray_fan(f2, 1e-9, 3, wavelength, center_ray=(0, 0, -1))
+    rays_back = ray_trace_system(rays_back, surfaces_rev, n_rev)
+    pt2 = intersect_rays(rays_back[0, 2], rays_back[-1, 2])
+    pp2 = pt2[0, 2]
+
+    efl2 = f2[0, 2] - pp2
+
+    return f1, f2, pp1, pp2, efl1, efl2
+
+
+# propagation and refraction
+def get_free_space_abcd(d, n=1):
+    """
+    Compute the ray-transfer (ABCD) matrix for free space beam propagation
+    @param d: distance beam propagated
+    @param n: index of refraction
+    @return mat:
+    """
+    mat = np.array([[1, d/n, 0, 0, 0],
+                    [0, 1, 0, 0, 0],
+                    [0, 0, 1, d/n, 0],
+                    [0, 0, 0, 1, 0],
+                    [0, 0, 0, 0, 1]])
+    return mat
+
+
+def refract_snell(rays, normals, n1, n2):
+    """
+    Refracts rays at surface with given normal by applying Snell's law
+
+    :param rays: N x 8 array
+    :param normals: N x 3 array
+    :param n1: index of refraction on the side of the interface the rays are travelling from
+    :param n2: index of refraction on the other side of the interface
+    :param rays_out: N x 8 array
+    """
+    normals = np.atleast_2d(normals)
+    rays = np.atleast_2d(rays)
+
+    ds = rays[:, 3:6]
+
+    # basis for computation (na, nb, nc)
+    # na is normal direction, nb orthogonal to normal and ray
+    na = normals
+
+    with np.errstate(invalid="ignore"):
+        nb = np.cross(ds, normals)
+        nb = nb / np.expand_dims(np.linalg.norm(nb, axis=1), axis=1)
+        nb[np.isnan(nb)] = 0
+
+        nc = np.cross(na, nb)
+        nc = nc / np.expand_dims(np.linalg.norm(nc, axis=1), axis=1)
+        nc[np.isnan(nc)] = 0
+
+        # snell's law
+        # the tangential component (i.e. nc direction) of k*n*ds is preserved across the interface
+        mag_nc = n1/n2 * np.expand_dims(np.sum(nc * ds, axis=1), axis=1)
+        sign_na = np.expand_dims(np.sign(np.sum(na * ds, axis=1)), axis=1)
+        # normalize outgoing ray direction. By construction nothing in nb direction
+        ds_out = mag_nc * nc + sign_na * np.sqrt(1 - mag_nc**2) * na
+
+        rays_out = np.concatenate((rays[:, :3], ds_out, rays[:, 6:]), axis=1)
+        rays_out[np.isnan(ds_out[:, 0]), :3] = np.nan
+
+    return rays_out
+
+
+def reflect(rays, normals):
+    """
+    Find new rays after reflecting off a surface defined by a given normal using the law of reflection
+
+    @param rays: nrays x 8 array
+    @param normals: array of size 3, in which case this normal is applied to all rays, or size nrays x 3, in
+    which case each normal is applied to the corresponding ray
+    @return rays_out: nrays x 8 array
+    """
+    normals = np.atleast_2d(normals)
+    rays = np.atleast_2d(rays)
+
+    ds = rays[:, 3:6]
+
+    # basis for computation (na, nb, nc)
+    # na is normal direction, nb orthogonal to normal and ray
+    na = normals
+
+    with np.errstate(invalid="ignore"):
+        nb = np.cross(ds, normals)
+        nb = nb / np.expand_dims(np.linalg.norm(nb, axis=1), axis=1)
+        nb[np.isnan(nb)] = 0
+
+        nc = np.cross(na, nb)
+        nc = nc / np.expand_dims(np.linalg.norm(nc, axis=1), axis=1)
+        nc[np.isnan(nc)] = 0
+
+    # law of reflection
+    # the normal component (i.e. na direction) changes sign
+    mag_na = -np.expand_dims(np.sum(na * ds, axis=1), axis=1)
+    mag_nc = np.expand_dims(np.sum(nc * ds, axis=1), axis=1)
+    ds_out = mag_na * na + mag_nc * nc
+
+    rays_out = np.concatenate((rays[:, :3], ds_out, rays[:, 6:]), axis=1)
+    rays_out[np.isnan(ds_out[:, 0]), :3] = np.nan
+
+    return rays_out
+
+
+# tools for creating ray fans, manipulating rays, etc.
 def get_ray_fan(pt, theta_max, n_thetas, wavelength, nphis=1, center_ray=(0, 0, 1)):
     """
     Get fan of rays emanating from pt
@@ -159,6 +448,9 @@ def get_collimated_rays(pt, displacement_max, n_disps, wavelength, nphis=1, norm
     @param normal: normal of plane
     @return:
     """
+    if np.abs(np.linalg.norm(normal) - 1) > 1e-12:
+        raise ValueError("normal must be a normalized vector")
+
     # build all angles and offsets and put in 1d arrays
     phis = np.arange(nphis) * 2*np.pi / nphis
     offs = np.linspace(-displacement_max, displacement_max, n_disps)
@@ -184,15 +476,19 @@ def get_collimated_rays(pt, displacement_max, n_disps, wavelength, nphis=1, norm
     # construct rays
     rays = np.zeros((n_disps * nphis, 8))
     # n1*cos(phi) + n2*sin(phi) is unit vector pointing to ray origin
-    rays[:, 0] = pt[0] + (n1[0] * np.cos(pps) + n2[0] * np.sin(pps)) * oos
-    rays[:, 1] = pt[1] + (n1[1] * np.cos(pps) + n2[1] * np.sin(pps)) * oos
-    rays[:, 2] = pt[2] + (n1[2] * np.cos(pps) + n2[2] * np.sin(pps)) * oos
+    # rays[:, 0] = pt[0] + (n1[0] * np.cos(pps) + n2[0] * np.sin(pps)) * oos
+    # rays[:, 1] = pt[1] + (n1[1] * np.cos(pps) + n2[1] * np.sin(pps)) * oos
+    # rays[:, 2] = pt[2] + (n1[2] * np.cos(pps) + n2[2] * np.sin(pps)) * oos
+    rays[:, 0] = pt[0] + np.cos(pps) * oos
+    rays[:, 1] = pt[1] + np.sin(pps) * oos
+    rays[:, 2] = pt[2]
     # rays are parallel
     rays[:, 3] = normal[0]
     rays[:, 4] = normal[1]
     rays[:, 5] = normal[2]
-    # assume phase is the same on starting plane
-    rays[:, 6] = 0
+    # assume phase is the same on plane perpendiular to the normal
+    rays[:, 6] = np.sum(rays[:, 0:3] * rays[:, 3:6], axis=1)
+    # wavelength
     rays[:, 7] = 2 * np.pi / wavelength
 
     return rays
@@ -296,8 +592,9 @@ def propagate_ray2plane(rays, normal, center, n=1, exclude_backward_propagation=
     ts = - ((xo - xc) * nx + (yo - yc) * ny + (zo - zc) * nz) / (dx * nx + dy * ny + dz * nz)
 
     # determine if this is a forward or backward propagation for the ray
-    prop_direction = np.ones(rays.shape[0], dtype=int)
-    prop_direction[ts < 0] = -1
+    with np.errstate(invalid="ignore"):
+        prop_direction = np.ones(rays.shape[0], dtype=int)
+        prop_direction[ts < 0] = -1
 
     # find intersection points
     prop_dist_vect = np.stack((dx, dy, dz), axis=1) * np.expand_dims(ts, axis=1)
@@ -344,117 +641,35 @@ def dist_pt2plane(pts, normal, center):
 
     return dists, nearest_pts
 
-# autofocus
-def auto_focus(surfaces, indices_of_refraction, wavelength, mode="ray-fan"):
-    """
-    Perform auto-focus operation
-
-    # todo: handle case where optical system extends past focus
-
-    :param list surfaces: list of surfaces
-    :param indices_of_refraction: list of indices of refraction betweeen surfaces
-    :param wavelength:
-    :param mode: "ray-fan" or "collimated"
-    :return updated_surfaces, updated_n:
-    """
-    # todo: maybe take sequence of rays with smaller and smaller angles...
-    if mode == "ray-fan":
-        rays_focus = get_ray_fan([0, 0, 0], 1e-9, 3, wavelength)
-    elif mode == "collimated":
-        rays_focus = get_collimated_rays([0, 0, 0], 1e-9, 3, wavelength)
-    else:
-        raise ValueError("mode must be 'ray-fan' or 'collimated' but was '%s'" % mode)
-    rays_focus = ray_trace_system(rays_focus, surfaces, indices_of_refraction)
-    focus = intersect_rays(rays_focus[-1, 1], rays_focus[-1, 2])
-
-    updated_surfaces = surfaces + [flat_surface([0, 0, focus[0, 2]], [0, 0, 1], surfaces[-1].aperture_rad)]
-    updated_n = indices_of_refraction + [indices_of_refraction[-1]]
-
-    return updated_surfaces, updated_n
-
-# find cardinal points and other useful points
-def find_cardinal_points(surfaces, indices_of_refraction, wavelength):
-    """
-    Compute cardinal points from ray tracing very small angles
-
-    # todo: this fails if BFP is within optical system
-
-    :param surfaces:
-    :param indices_of_refraction:
-    :param wavelength:
-    :return z1, z2:
-    """
-    k = 2 * np.pi / wavelength
-
-    # find focal point to right of lens
-    rays = np.array([[0, 0, 0, 0, 0, 1, 0, k], [1e-9, 0, 0, 0, 0, 1, 0, k]])
-    rays = ray_trace_system(rays, surfaces, indices_of_refraction)
-    f2 = intersect_rays(rays[-1, 0], rays[-1, 1])
-
-    # find focal point to left of lens
-    surfaces_rev, n_rev = get_reversed_system(surfaces, indices_of_refraction)
-    # todo: need to ensure rays past last surface...
-    rays = np.array([[0, 0, 1e4, 0, 0, -1, 0, k], [1e-9, 0, 1e4, 0, 0, -1, 0, k]])
-    rays = ray_trace_system(rays, surfaces_rev, n_rev)
-    f1 = intersect_rays(rays[-1, 0], rays[-1, 1])
-
-    # propagate rays from front focal point to collimated to find first principal plane
-    rays_fwd = get_ray_fan(f1, 1e-9, 3, wavelength)
-    rays_fwd = ray_trace_system(rays_fwd, surfaces, indices_of_refraction)
-    pt1 = intersect_rays(rays_fwd[0, 2], rays_fwd[-1, 2])
-    pp1 = pt1[0, 2]
-
-    # effective focal length
-    efl1 = pp1 - f1[0, 2]
-
-    # propagate rays backward from the back focal point to collimated to find the second principal plane
-    surfaces_rev, n_rev = get_reversed_system(surfaces, indices_of_refraction)
-
-    rays_back = get_ray_fan(f2, 1e-9, 3, wavelength, center_ray=(0, 0, -1))
-    rays_back = ray_trace_system(rays_back, surfaces_rev, n_rev)
-    pt2 = intersect_rays(rays_back[0, 2], rays_back[-1, 2])
-    pp2 = pt2[0, 2]
-
-    efl2 = f2[0, 2] - pp2
-
-    return f1, f2, pp1, pp2, efl1, efl2
-
-
-def get_reversed_system(surfaces, indices_of_refraction):
-    """
-    :param list surfaces:
-    :param list n_rev:
-    :return surfaces_rev, n_rev:
-    """
-    surfaces_rev = [surfaces[-ii] for ii in range(1, len(surfaces) + 1)]
-    n_rev = [indices_of_refraction[-ii] for ii in range(1, len(indices_of_refraction) + 1)]
-    return surfaces_rev, n_rev
 
 # display
-def plot_rays(ray_array, surfaces=None, colors=None, **kwargs):
+def plot_rays(ray_array, surfaces=None, colors=None, ax=None, **kwargs):
     """
     :param ray_array: nsurfaces X nrays x 8
     """
-    figh = plt.figure(**kwargs)
+
+    if ax is None:
+        figh = plt.figure(**kwargs)
+        ax = plt.subplot(1, 1, 1)
+    else:
+        figh = ax.get_figure()
 
     if colors is None:
-        plt.plot(ray_array[:, :, 2], ray_array[:, :, 0])
+        ax.plot(ray_array[:, :, 2], ray_array[:, :, 0])
     else:
         if len(colors) != ray_array.shape[1]:
             raise ValueError("len(colors) must equal ray_array.shape[1]")
         for ii in range(ray_array.shape[1]):
-            plt.plot(ray_array[:, ii, 2], ray_array[:, ii, 0], color=colors[ii])
+            ax.plot(ray_array[:, ii, 2], ray_array[:, ii, 0], color=colors[ii])
 
-    plt.xlabel("z-position")
-    plt.ylabel("x-position")
-
-    ax = plt.gca()
+    ax.set_xlabel("z-position")
+    ax.set_ylabel("x-position")
 
     if surfaces is not None:
         for s in surfaces:
             s.draw(ax)
 
-    return figh
+    return figh, ax
 
 
 def plot_spot_diagram(rays, **kwargs):
@@ -471,100 +686,28 @@ def plot_spot_diagram(rays, **kwargs):
     return figh
 
 
-# propogation and refraction
-def get_free_space_abcd(d, n=1):
-    """
-
-    """
-    mat = np.array([[1, d/n, 0, 0, 0],
-                    [0, 1, 0, 0, 0],
-                    [0, 0, 1, d/n, 0],
-                    [0, 0, 0, 1, 0],
-                    [0, 0, 0, 0, 1]])
-    return mat
-
-
-def refract_snell(rays, normals, n1, n2):
-    """
-    Refracts rays at surface with given normal by applying Snell's law
-
-    :param rays: N x 8 array
-    :param normals: N x 3 array
-    :param n1: index of refraction on the side of the interface the rays are travelling from
-    :param n2: index of refraction on the other side of the interface
-    :param rays_out: N x 8 array
-    """
-    normals = np.atleast_2d(normals)
-    rays = np.atleast_2d(rays)
-
-    ds = rays[:, 3:6]
-
-    # basis for computation (na, nb, nc)
-    # na is normal direction, nb orthogonal to normal and ray
-    na = normals
-
-    with np.errstate(invalid="ignore"):
-        nb = np.cross(ds, normals)
-        nb = nb / np.expand_dims(np.linalg.norm(nb, axis=1), axis=1)
-        nb[np.isnan(nb)] = 0
-
-        nc = np.cross(na, nb)
-        nc = nc / np.expand_dims(np.linalg.norm(nc, axis=1), axis=1)
-        nc[np.isnan(nc)] = 0
-
-        # snell's law
-        # the tangential component (i.e. nc direction) of k*n*ds is preserved across the interface
-        mag_nc = n1/n2 * np.expand_dims(np.sum(nc * ds, axis=1), axis=1)
-        sign_na = np.expand_dims(np.sign(np.sum(na * ds, axis=1)), axis=1)
-        # normalize outgoing ray direction. By construction nothing in nb direction
-        ds_out = mag_nc * nc + sign_na * np.sqrt(1 - mag_nc**2) * na
-
-        rays_out = np.concatenate((rays[:, :3], ds_out, rays[:, 6:]), axis=1)
-        rays_out[np.isnan(ds_out[:, 0]), :3] = np.nan
-
-    return rays_out
-
-
-def reflect(rays, normals):
-    """
-
-    """
-    normals = np.atleast_2d(normals)
-    rays = np.atleast_2d(rays)
-
-    ds = rays[:, 3:6]
-
-    # basis for computation (na, nb, nc)
-    # na is normal direction, nb orthogonal to normal and ray
-    na = normals
-
-    with np.errstate(invalid="ignore"):
-        nb = np.cross(ds, normals)
-        nb = nb / np.expand_dims(np.linalg.norm(nb, axis=1), axis=1)
-        nb[np.isnan(nb)] = 0
-
-        nc = np.cross(na, nb)
-        nc = nc / np.expand_dims(np.linalg.norm(nc, axis=1), axis=1)
-        nc[np.isnan(nc)] = 0
-
-    # law of reflection
-    # the normal component (i.e. na direction) changes sign
-    mag_na = -np.expand_dims(np.sum(na * ds, axis=1), axis=1)
-    mag_nc = np.expand_dims(np.sum(nc * ds, axis=1), axis=1)
-    ds_out = mag_na * na + mag_nc * nc
-
-    rays_out = np.concatenate((rays[:, :3], ds_out, rays[:, 6:]), axis=1)
-    rays_out[np.isnan(ds_out[:, 0]), :3] = np.nan
-
-    return rays_out
-
-
 # probably better to implement surfaces like this ...
 class surface:
-    def __init__(self, input_axis, output_axis, paraxial_center):
+    def __init__(self, input_axis, output_axis, paraxial_center, aperture_rad, is_aperture_stop=False):
+
+        # input axes
+        # n1_in, n2_in, n3_in are mutually orthogonal input unit vectors (think x, y, z).
+        # n3_in is the input optical axis.
+        # n1_in and n2_in are the x-like and y-like axes and the ABCD matrices are defined according to them
         self.input_axis = np.array(input_axis).squeeze()
+
+        # output axes, defined similar to n1_in, n2_in, n3_in
+        # for input vectors infinitesimally away from the axis along n1_in, they will exit
+        # displaced from the output optical axis along n1_out
+        # this is mainly so ray-transfer matrices make sense for mirrors
         self.output_axis = np.array(output_axis).squeeze()
+
+        # paraxial center
         self.paraxial_center = np.array(paraxial_center).squeeze()
+
+        # aperture information
+        self.aperture_rad = aperture_rad
+        self.is_aperture_stop = is_aperture_stop
 
     def get_normal(self, pts):
         """
@@ -582,8 +725,34 @@ class surface:
     def propagate(self, ray_array, n1, n2):
         pass
 
-    def get_abcd(self, axis):
+    def get_seidel_third_order_fns(self):
+        raise NotImplementedError()
+
+    def get_abcd(self, n1, n2):
         pass
+
+    def solve_img_eqn(self, s, n1, n2):
+        """
+        solve imaging equation where s is the object distance and s' is the image distance
+
+        s and s' use the same convention, where they are negative if to the "left" of the optic and positive
+        to the right.
+        @param s:
+        @param n1:
+        @param n2:
+        @return:
+        """
+        mat = self.get_abcd(n1, n2)
+        # idea: form full ABCD matrix as free prop in n2 * mat * free prop in n1, then set B = 0
+        with np.errstate(divide="ignore"):
+            if not np.isinf(s):
+                sp_x = np.atleast_1d(-n2 * (-mat[0, 0] * s / n1 + mat[0, 1]) / np.array(-mat[1, 0] * s / n1 + mat[1, 1]))
+                sp_y = np.atleast_1d(-n2 * (-mat[2, 2] * s / n1 + mat[2, 3]) / np.array(-mat[3, 2] * s / n1 + mat[3, 3]))
+            else:
+                sp_x = np.atleast_1d(-n2 * mat[0, 0] / mat[1, 0])
+                sp_y = np.atleast_1d(-n2 * mat[2, 2] / mat[3, 2])
+
+        return sp_x
 
     def is_pt_on_surface(self, pts,):
         """
@@ -618,6 +787,15 @@ class refracting_surface(surface):
         rays_intersection = self.get_intersect(rays, n1)
         # compute normals
         normals = self.get_normal(rays_intersection)
+
+        # check ray was coming from the "front side"
+        # i.e. the ray has to be coming from the correct 2*pi area of space
+        ray_normals = rays[:, 3:6]
+        cos_ray_input = np.sum(ray_normals * np.expand_dims(self.input_axis, axis=0), axis=1)
+        with np.errstate(invalid="ignore"):
+            not_incoming = cos_ray_input < 0
+        rays_intersection[not_incoming] = np.nan
+
         # do refraction
         rays_refracted = refract_snell(rays_intersection, normals, n1, n2)
 
@@ -655,24 +833,17 @@ class reflecting_surface(surface):
 
 
 class flat_surface(refracting_surface):
+    # todo: can this be replaced by spherical_surface() with R=np.inf?
     """
     Surface is defined by
         [(x, y, z) - (cx, cy, cz)] \cdot normal = 0
 
     Where the normal should point along the intended direction of ray-travel
     """
-    def __init__(self, center, normal, aperture_rad, paraxial_center=None):
+    def __init__(self, center, normal, aperture_rad, is_aperture_stop=False):
         self.center = np.array(center).squeeze()
         self.normal = np.array(normal).squeeze()
-        self.aperture_rad = aperture_rad
-
-        if paraxial_center is None:
-            self.paraxial_center = self.center
-        else:
-            self.paraxial_center = np.array(paraxial_center).squeeze()
-
-        self.input_axis = self.normal
-        self.output_axis = self.normal
+        super().__init__(normal, normal, center, aperture_rad, is_aperture_stop)
 
 
     def get_normal(self, pts):
@@ -703,13 +874,40 @@ class flat_surface(refracting_surface):
         return on_surface
 
 
-    def get_abcd(self, axis, n1=None, n2=None):
+    def get_abcd(self, n1=None, n2=None):
         mat = np.array([[1, 0, 0, 0, 0],
                         [0, 1, 0, 0, 0],
                         [0, 0, 1, 0, 0],
                         [0, 0, 0, 1, 0],
                         [0, 0, 0, 0, 1]])
         return mat
+
+
+    def get_seidel_third_order_fns(self, n1, n2, s, sp, t, tp, h, H):
+        if s != 0:
+            K = n1 * (-1 / s)  # abbe invariant for image/obj point
+            c1 = (1 / (n2 * sp) - 1 / (n1 * s))
+        else:  # in this case h = 0, and K only enters with a factor of h so doesn't matter...
+            K = 0
+            c1 = 0
+
+        if t != 0:
+            L = n1 * (-1 / t)  # abbe invariant for pupil/pupil image point
+            c2 = (1 / (n2 * tp) - 1 / (n1 * t))
+        else:  # in this case H = 0, and L only enters with a factor of H so doesn't matter...
+            L = 0
+            c2 = 0
+
+        # these are B, F, C, D, E
+        # i.e. spherical, coma, astigmatism and curvature of field, and distortion
+        coeffs = np.array([0.5 * h ** 4 * K ** 2 * c1,
+                           0.5 * H * h ** 3 * K * L * c1,
+                           0.5 * H ** 2 * h ** 2 * L ** 2 * c1,
+                           0.5 * H ** 2 * h ** 2 * (K * L * c1 - K * (K - L) * c2),
+                           0.5 * H ** 3 * h * (L ** 2 * c1 - L * (K - L) * c2),
+                           ])
+
+        return coeffs
 
 
     def draw(self, ax):
@@ -737,14 +935,10 @@ class plane_mirror(reflecting_surface):
         Where the normal should point along the intended direction of ray-travel
         """
 
-    def __init__(self, center, normal, aperture_rad):
+    def __init__(self, center, normal, aperture_rad, is_aperture_stop=False):
         self.center = np.array(center).squeeze()
         self.normal = np.array(normal).squeeze()
-        self.aperture_rad = aperture_rad
-
-        self.paraxial_center = self.center
-        self.input_axis = self.normal
-        self.output_axis = self.normal
+        super().__init__(normal, normal, center, aperture_rad, is_aperture_stop)
 
     def get_normal(self, pts):
         pts = np.atleast_2d(pts)
@@ -773,7 +967,7 @@ class plane_mirror(reflecting_surface):
 
         return on_surface
 
-    def get_abcd(self, axis, n1, n2):
+    def get_abcd(self, n1, n2):
         mat = np.array([[1, 0, 0, 0],
                         [0, -1, 0, 0],
                         [0, 0, 1, 0],
@@ -798,32 +992,33 @@ class plane_mirror(reflecting_surface):
 
 
 class spherical_surface(refracting_surface):
-    def __init__(self, radius, center, aperture_rad, input_axis=(0, 0, 1)):
+    def __init__(self, radius, center, aperture_rad, input_axis=(0, 0, 1), is_aperture_stop=False):
         """
+        Constructor method, but often it is more convenient to use get_on_axis() instead.
+
         :param radius:
         :param center: [cx, cy, cz]
         """
         self.radius = radius
         self.center = np.array(center).squeeze()
-        self.aperture_rad = aperture_rad
 
-        self.input_axis = np.array(input_axis).squeeze()
-        self.output_axis = self.input_axis
-        self.paraxial_center = self.center - self.radius * self.input_axis
+        paraxial_center = self.center - self.radius * np.array(input_axis).squeeze()
+        super().__init__(input_axis, input_axis, paraxial_center, aperture_rad, is_aperture_stop)
 
     @classmethod
-    def get_on_axis(cls, radius, surface_z_position, aperture_rad):
+    def get_on_axis(cls, radius, surface_z_position, aperture_rad, is_aperture_stop=False):
         """
         Construct spherical surface from position on-optical axis, instead of center
 
         Think of this as an alternate constructor
         """
-        return cls(radius, [0, 0, surface_z_position + radius], aperture_rad, input_axis=(0, 0, 1))
+        input_axis = (0, 0, 1)
+        return cls(radius, [0, 0, surface_z_position + radius], aperture_rad, input_axis, is_aperture_stop)
 
 
     def get_normal(self, pts):
         """
-        Return the outward facing normal if self.radius > 0, otherwise the inward facing normal
+        Return the outward facing normal if self.aperture_radius > 0, otherwise the inward facing normal
 
         :param pts: each pt defined by row of matrix
         """
@@ -833,9 +1028,6 @@ class spherical_surface(refracting_surface):
 
 
     def get_intersect(self, rays, n1):
-        """
-
-        """
         rays = np.atleast_2d(rays)
 
         # ray parameterized by (xo, yo, zo) + t * (dx, dy, dz)
@@ -884,13 +1076,46 @@ class spherical_surface(refracting_surface):
         return on_surface
 
 
+    def get_seidel_third_order_fns(self, n1, n2, s, sp, t, tp, h, H):
+        if s != 0:
+            K = n1 * (1 / self.radius - 1 / s) # abbe invariant for image/obj point
+            c1 = (1 / (n2 * sp) - 1 / (n1 * s))
+        else: # in this case h = 0, and K only enters with a factor of h so doesn't matter...
+            K = 0
+            c1 = 0
+
+        if t != 0:
+            L = n1 * (1 / self.radius - 1 / t) # abbe invariant for pupil/pupil image point
+            c2 = (1 / (n2 * tp) - 1 / (n1 * t))
+        else: # in this case H = 0, and L only enters with a factor of H so doesn't matter...
+            L = 0
+            c2 = 0
+
+        # B, F, C, D, E
+        # i.e. spherical, coma, astigmatism and curvature of field, and distortion
+        coeffs = np.array([0.5 * h**4 * K**2 * c1,
+                           0.5 * H * h**3 * K * L * c1,
+                           0.5 * H**2 * h**2 * L**2 * c1,
+                           0.5 * H**2 * h**2 * (K * L * c1 - K * (K - L) * c2),
+                           0.5 * H**3 * h * (L**2 * c1 - L * (K - L) * c2),
+                           ])
+
+        return coeffs
+
     def get_abcd(self, n1, n2):
-        # todo: modify to allow different paraxial center
-        mat = np.array([[1, 0, 0, 0, 0],
-                        [-(n2 - n1)/ self.radius, 1, 0, 0, 0],
-                        [0, 0, 1, 0, 0],
-                        [0, 0, -(n2 - n1)/ self.radius, 1, 0],
-                        [0, 0, 0, 0, 1]])
+        # test if we are going from "inside the sphere" to "outside the sphere" i.e. ray is striking the concave side
+        # or the other way
+        pc_to_c = self.center - self.paraxial_center
+        sgn = np.sign(np.dot(pc_to_c, self.input_axis))
+
+        with np.errstate(divide="ignore"):
+            f = sgn * np.abs(self.radius) / np.array(n2 - n1)
+
+        mat = np.array([[1,    0, 0,    0, 0],
+                        [-1/f, 1, 0,    0, 0],
+                        [0,    0, 1,    0, 0],
+                        [0,    0, -1/f, 1, 0],
+                        [0,    0, 0,    0, 1]])
         return mat
 
 
@@ -904,7 +1129,7 @@ class spherical_surface(refracting_surface):
 
 
 class perfect_relay(refracting_surface):
-    def __init__(self, magnification, focal_len, center, normal, aperture_rad):
+    def __init__(self, magnification, focal_len, center, normal, aperture_rad, is_aperture_stop=False):
         """
         This lens has no length. The center position defines the pupil planes (and principal planes).
         The normal should point the same direction rays propagate through the system
@@ -914,7 +1139,7 @@ class perfect_relay(refracting_surface):
         self.focal_len = focal_len
         self.center = np.array(center).squeeze()
         self.normal = np.array(normal).squeeze()
-        self.aperture_rad = aperture_rad
+        super().__init__(normal, normal, center, aperture_rad, is_aperture_stop)
 
     def get_normal(self):
         pass
@@ -1041,7 +1266,7 @@ class perfect_relay(refracting_surface):
 
 
 class perfect_lens(refracting_surface):
-    def __init__(self, focal_len, center, normal, aperture_rad):
+    def __init__(self, focal_len, center, normal, alpha, is_aperture_stop=False):
         """
         This lens has no length. The center position defines the principal planes.
         The normal should point the same direction rays propagate through the system
@@ -1054,9 +1279,11 @@ class perfect_lens(refracting_surface):
         todo: not sure what is best way to handle that in general. Should it be at lens
         """
         self.focal_len = focal_len
+        self.alpha = alpha
         self.center = np.array(center).squeeze()
         self.normal = np.array(normal).squeeze()
-        self.aperture_rad = aperture_rad
+        aperture_rad = focal_len * np.sin(self.alpha) # only correct up to factor of n1
+        super().__init__(normal, normal, center, aperture_rad, is_aperture_stop)
 
     def get_normal(self):
         pass
@@ -1125,19 +1352,27 @@ class perfect_lens(refracting_surface):
 
         In practice, this expression is not implemented directly. Rather, equal phase is imposed at the focus
 
+        When considering the vectorial model, we instead talk about the ray position vector r1, the ray position
+        vector relative to the focal point r1', the ray unit vector s1, and the unit vector formed by projecting
+        the optical axis direction n from s1 call it s1' = (s1 - n\cdot s1) / |s_1 - n\cdot s1|. In terms
+        of these quantities,
+        r2' = n1 * f * (s1' \cdot s1) * s1'
+        s2' = - |r1'| / (n2 * f) * (r1' / |r1'|)
+
         :param ray_array: nsurfaces x nrays x 8
         :param n1: index of refraction on first side of surface
         :param n2: index of refraction on second side of surface
         """
-        # todo: set phase in a reasonable way. Probably should say phase depends only on input and output position
 
         if rays.ndim == 1:
             rays = np.expand_dims(rays, axis=(0, 1))
         elif rays.ndim == 2:
             rays = np.expand_dims(rays, axis=0)
 
+        # #####################################
         # get the three surfaces we will need in our calculation: front focal plane (i.e. before the lens),
         # lens surface, back focal plane (i.e. after the lens)
+        # #####################################
         front_focal_pt = self.center - self.normal * self.focal_len * n1
         front_focal_plane = flat_surface(front_focal_pt, self.normal, self.aperture_rad)
 
@@ -1145,76 +1380,105 @@ class perfect_lens(refracting_surface):
 
         back_focal_pt = self.center + self.normal * self.focal_len * n2
 
+        # #####################################
         # find position rays intersect the object plane (front focal plane)
         # if rays are already in front of the object plane, propagate them backwards to reach it
-        rays_obj_plane, _ = propagate_ray2plane(rays[-1], front_focal_plane.normal, front_focal_plane.center,
-                                                n=n1,
-                                                exclude_backward_propagation=False)
+        # #####################################
+        rays_ffp, _ = propagate_ray2plane(rays[-1], front_focal_plane.normal, front_focal_plane.center,
+                                          n=n1, exclude_backward_propagation=False)
 
-        # beginning constructing rays as they appear in the BFP (i.e. after the lens)
-        rays_bfp = np.zeros(rays_obj_plane.shape)
-        # keep same wavelength
+        # #####################################
+        # compute geometric data (height and angle) of rays in ffp relative to the lens axis
+        # #####################################
+
+        # get unit vectors pointing along input rays
+        s1 = rays_ffp[:, 3:6]
+        # n0 are the unit vectors pointing along rays after projecting out the portion along the lens normal
+        ray_normal_dot = np.sum(s1 * np.expand_dims(self.normal, axis=0), axis=1)
+        s1_perp_uvec = s1 - np.expand_dims(ray_normal_dot, axis=1) * np.expand_dims(self.normal, axis=0)
+
+        # only normalize non-zero rays
+        with np.errstate(invalid="ignore"):
+            # to_normalize = np.sum(np.abs(n0), axis=1) > 1e-13
+            # n0[to_normalize] = n0[to_normalize] / np.expand_dims(np.linalg.norm(n0[to_normalize], axis=1), axis=1)
+            s1_perp_norm = np.linalg.norm(s1_perp_uvec, axis=1)
+            to_normalize = s1_perp_norm > 1e-12
+            s1_perp_uvec[to_normalize] = s1_perp_uvec[to_normalize] / np.expand_dims(s1_perp_norm[to_normalize], axis=1)
+
+        # compute the vectorial "height" of rays above optical axis
+        # r1_vec is the vector in the FFP pointing to the position of the ray
+        # i.e. the ray position after projecting out the optical axis direction
+        r1_vec = rays_ffp[:, 0:3] - front_focal_pt
+        r1_norm = np.linalg.norm(r1_vec, axis=1)
+
+        # get unit vector
+        to_normalize = r1_norm != 0
+        r1_uvec = np.array(r1_vec, copy=True)
+        r1_uvec[to_normalize] = r1_uvec[to_normalize] / np.expand_dims(np.linalg.norm(r1_uvec[to_normalize], axis=1), axis=1)
+
+        # sine of angle between incoming ray and the optical axis
+        sin_t1 = np.sum(s1_perp_uvec * s1, axis=1)
+
+        # #####################################
+        # construct rays as they appear in the BFP (i.e. after the lens)
+        # #####################################
+        rays_bfp = np.zeros(rays_ffp.shape)
+
+        # keep same wavelengths
         rays_bfp[:, 7] = rays[-1, :, 7]
 
-        # compute output positions
-        # get unit vectors pointing along rays
-        ray_dirs = rays_obj_plane[:, 3:6]
-        # n0 are the unit vectors pointing along rays after projecting out the portion along the lens normal
-        n0 = ray_dirs - np.expand_dims(np.sum(ray_dirs * np.expand_dims(self.normal, axis=0), axis=1), axis=1) * \
-                  np.expand_dims(self.normal, axis=0)
-        to_normalize = np.sum(n0, axis=1) != 0
-        n0[to_normalize] = n0[to_normalize] / np.expand_dims(np.linalg.norm(n0[to_normalize], axis=1), axis=1)
-
-        # BFP positions found from the analog of n*fl*sin(theta)
-        # in perfect lens assumption, gives Fourier transform in BFP. Since the above expression
-        # holds for the on-axis point, also works for off axis points
-        sin_t1 = np.sum(n0 * ray_dirs, axis=1)
-        rays_bfp[:, :3] = n1 * self.focal_len * np.expand_dims(sin_t1, axis=1) * n0 + \
-                          np.expand_dims(back_focal_pt, axis=0)
+        # compute ray positions in BFP. These depend only on the input direction and are found by
+        # vectorial position = h * n0 where h = n*fl*sin(theta_1)
+        h2 = n1 * self.focal_len * np.expand_dims(sin_t1, axis=1) * s1_perp_uvec
+        rays_bfp[:, :3] = h2 + np.expand_dims(back_focal_pt, axis=0)
 
         # output angles
-        # r0 is unit vector in object plane and h1 is "height"
-        r0 = rays_obj_plane[:, 0:3] - front_focal_pt
-        h1 = np.linalg.norm(r0, axis=1)
-        to_normalize = np.sum(r0, axis=1) != 0
-        r0[to_normalize] = r0[to_normalize] / np.expand_dims(np.linalg.norm(r0[to_normalize], axis=1), axis=1)
-
-        # get signed height. Note that this is only required for correctly determining the phase
-        # the position can be determined from h1 and r0
-        h1_sign = np.sign(np.sum(r0 * n0, axis=1))
-        h1_sign[h1_sign == 0] = 1
-
-        # compute angles
         # get unit vector for input positions, r0
         with np.errstate(invalid="ignore"):
-            sin_t2 = h1 / self.focal_len / n2
+            sin_t2 = -r1_norm / self.focal_len / n2
             cos_t2 = np.sqrt(1 - sin_t2**2)
-            rays_bfp[:, 3:6] = -np.expand_dims(sin_t2, axis=1) * r0 + \
-                                np.expand_dims(cos_t2, axis=1) * np.expand_dims(self.normal, axis=0)
+            rays_bfp[:, 3:6] = np.expand_dims(sin_t2, axis=1) * r1_uvec + \
+                               np.expand_dims(cos_t2, axis=1) * np.expand_dims(self.normal, axis=0)
 
+        # #####################################
+        # exclude points which are outside of the NA of the lens
+        # #####################################
+        with np.errstate(invalid="ignore"):
+            input_angle_too_steep = np.abs(sin_t1) > np.sin(self.alpha)
+            output_angle_too_steep = np.abs(sin_t2) > np.sin(self.alpha)
+            rays_bfp[np.logical_or(input_angle_too_steep, output_angle_too_steep)] = np.nan
+
+        # #####################################
         # set phase at BfP. There are three contributions:
         # (1) the initial phase
         # (2) the phase the lens imparts. This can be calculated by realizing the final phases must be equal
         # for a fan of parallel rays (i.e. a plane wave). Since in the initial plane these rays have phases
-        # n1*k*h1*sin_t1, we must subtract this phase here. The rest of the lens phase shift is taken care of
+        # k*n1*h1*sin_t1, we must subtract this phase here. The rest of the lens phase shift is taken care of
         # by enforcing the phases initially being equal in the BFP
         # note that h1 is not the signed height. To get the signed height, we must check if n0 and r0 point
         # in the same direction (positive height) or opposite directions (negative height)
-        # (3) the phase from propagating distance n1*f + n2*f
-        rays_bfp[:, 6] = rays_obj_plane[:, 6] - \
-                         rays[-1, :, 7] * n1 * h1 * h1_sign * sin_t1 + \
+        # (3) the phase from propagating distance n1*f + n2*f which is (k*n1)*n1*f + (k*n2)*n2*f
+        # #####################################
+        plane_wave_phase = np.sum(r1_vec * s1, axis=1)
+
+        rays_bfp[:, 6] = rays_ffp[:, 6] - \
+                         rays[-1, :, 7] * n1 * plane_wave_phase + \
                          rays[-1, :, 7] * (n1**2 * self.focal_len + n2**2 * self.focal_len)
 
+        # #####################################
         # propagate rays from bfp backwards to lens position
         # note: from this direction don't care about aperture
+        # #####################################
         rays_after_lens, _ = propagate_ray2plane(rays_bfp, lens_plane.normal, lens_plane.center,
                                                  n=n2, exclude_backward_propagation=False)
 
         # also need position that the rays would normally intersect lens position
         rays_before_lens, _ = propagate_ray2plane(rays[-1], lens_plane.normal, lens_plane.center)
 
-        # output ray area is all the rays that were passed in and two new surface
+        # #####################################
+        # output ray array is all the rays that were passed in and two new surface
         # (1) right before the lens and (2) right after
+        # #####################################
         rays_out = np.concatenate((rays, np.stack((rays_before_lens, rays_after_lens), axis=0)), axis=0)
 
         return rays_out
