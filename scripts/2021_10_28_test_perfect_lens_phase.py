@@ -3,7 +3,7 @@ Test that perfect lens gives correct phase values
 """
 import numpy as np
 import matplotlib.pyplot as plt
-import ray_trace as rt
+import raytrace.raytrace as rt
 
 wavelength = 0.785
 k = 2*np.pi/ wavelength

@@ -5,8 +5,10 @@
 Ray trace "thin lens" and calculate Seidel aberration coefficients
 """
 import numpy as np
+import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
-import ray_trace as rt
+import raytrace.raytrace as rt
 
 wavelength = 0.532
 

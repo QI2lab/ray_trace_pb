@@ -8,5 +8,9 @@ git clone https://github.com/QI2lab/ray_trace_pb.git
 cd ray_trace_pb
 pip install .
 ```
+If you want to edit the package then install it in editable mode using instead
+```
+pip install -e .
+```
 
 Example scripts can be found in the [scripts](scripts) directory

@@ -3,7 +3,7 @@ Simulate full SIM/ODT optical setup
 """
 import numpy as np
 import matplotlib.pyplot as plt
-import ray_trace as rt
+import raytrace.raytrace as rt
 
 wavelength_align = 0.532 # todo: simulate alignment
 wavelength_odt = 0.785
