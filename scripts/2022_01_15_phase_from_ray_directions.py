@@ -1,8 +1,5 @@
 """
-1/15/2022, Peter T. Brown
-"""
-"""
-Ray trace "thin lens" and calculate Seidel aberration coefficients
+Calculate phase profile at a surface from ray directions
 """
 import numpy as np
 import matplotlib
