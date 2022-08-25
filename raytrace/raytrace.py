@@ -1506,6 +1506,9 @@ class perfect_lens(refracting_surface):
         ax.plot(pts[:, 2], pts[:, 0], 'k')
 
 # optical glasses
+# for information about various materials, see https://refractiveindex.info/ or https://www.schott.com
+# abbe number vd = (nd - 1) / (nf - nc)
+# vd > 50 = crown glass, otherwise flint glass
 class material():
 
     # helium d-line
@@ -1527,7 +1530,7 @@ class material():
         """
         compute index of refraction from Sellmeier dispersion formula
 
-        see ttps://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf
+        see https://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf
         for information about various materials, see https://refractiveindex.info/
         """
         val = self.b1 * wavelength ** 2 / (wavelength ** 2 - self.c1) + \
@@ -1564,12 +1567,33 @@ class nbaf10(material):
         cs = [0.00926681282, 0.0424489805, 105.613573]
         super(nbaf10, self).__init__(bs, cs)
 
+
+class nlak22(material):
+    """
+    https://www.schott.com/shop/advanced-optics/en/Optical-Glass/N-LAK22/c/glass-N-LAK22
+    """
+    def __init__(self):
+        bs = [1.14229781, 0.535138441, 1.040883850]
+        cs = [0.00585778594, 0.0198546147, 100.8340170]
+        super(nlak22, self).__init__(bs, cs)
+
+
 # flint glasses (high dispersion, high refractive index)
 class sf10(material):
     def __init__(self):
         bs = [1.62153902, 0.256287842, 1.64447552]
         cs = [0.0122241457, 0.0595736775, 147.468793]
         super(sf10, self).__init__(bs, cs)
+
+
+class sf6(material):
+    """
+    https://www.schott.com/shop/advanced-optics/en/Optical-Glass/SF6/c/glass-SF6
+    """
+    def __init__(self):
+        bs = [1.72448482, 0.390104889, 1.045728580]
+        cs = [0.01348719470, 0.0569318095, 118.5571850]
+        super(sf6, self).__init__(bs, cs)
 
 
 class sf2(material):
