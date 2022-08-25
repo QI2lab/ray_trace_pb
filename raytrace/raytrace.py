@@ -436,23 +436,26 @@ def get_ray_fan(pt, theta_max, n_thetas, wavelength, nphis=1, center_ray=(0, 0, 
     return rays
 
 
-def get_collimated_rays(pt, displacement_max, n_disps, wavelength, nphis=1, normal=(0, 0, 1)):
+def get_collimated_rays(pt, displacement_max, n_disps, wavelength, nphis=1, phi_start=0., normal=(0, 0, 1)):
     """
     Get a fan of collimated arrays along a certain direction
+
+    # todo: add initial direction argument
 
     @param pt: point in the origin plane
     @param displacement_max: maximum radial displacement
     @param n_disps:
     @param wavelength:
     @param nphis: number of rays in azimuthal direction
+    @param phi_start: angle about normal to start at
     @param normal: normal of plane
-    @return:
+    @return rays:
     """
     if np.abs(np.linalg.norm(normal) - 1) > 1e-12:
         raise ValueError("normal must be a normalized vector")
 
     # build all angles and offsets and put in 1d arrays
-    phis = np.arange(nphis) * 2*np.pi / nphis
+    phis = np.arange(nphis) * 2*np.pi / nphis + phi_start
     offs = np.linspace(-displacement_max, displacement_max, n_disps)
     pps, oos = np.meshgrid(phis, offs)
     pps = pps.ravel()
@@ -476,9 +479,6 @@ def get_collimated_rays(pt, displacement_max, n_disps, wavelength, nphis=1, norm
     # construct rays
     rays = np.zeros((n_disps * nphis, 8))
     # n1*cos(phi) + n2*sin(phi) is unit vector pointing to ray origin
-    # rays[:, 0] = pt[0] + (n1[0] * np.cos(pps) + n2[0] * np.sin(pps)) * oos
-    # rays[:, 1] = pt[1] + (n1[1] * np.cos(pps) + n2[1] * np.sin(pps)) * oos
-    # rays[:, 2] = pt[2] + (n1[2] * np.cos(pps) + n2[2] * np.sin(pps)) * oos
     rays[:, 0] = pt[0] + np.cos(pps) * oos
     rays[:, 1] = pt[1] + np.sin(pps) * oos
     rays[:, 2] = pt[2]
@@ -486,7 +486,7 @@ def get_collimated_rays(pt, displacement_max, n_disps, wavelength, nphis=1, norm
     rays[:, 3] = normal[0]
     rays[:, 4] = normal[1]
     rays[:, 5] = normal[2]
-    # assume phase is the same on plane perpendiular to the normal
+    # assume phase is the same on plane perpendicular to the normal
     rays[:, 6] = np.sum(rays[:, 0:3] * rays[:, 3:6], axis=1)
     # wavelength
     rays[:, 7] = 2 * np.pi / wavelength
@@ -643,7 +643,7 @@ def dist_pt2plane(pts, normal, center):
 
 
 # display
-def plot_rays(ray_array, surfaces=None, colors=None, ax=None, **kwargs):
+def plot_rays(ray_array, surfaces=None, phi=0, colors=None, ax=None, **kwargs):
     """
     :param ray_array: nsurfaces X nrays x 8
     """
@@ -654,16 +654,21 @@ def plot_rays(ray_array, surfaces=None, colors=None, ax=None, **kwargs):
     else:
         figh = ax.get_figure()
 
+    h_data = ray_array[:, :, 0] * np.cos(phi) + ray_array[:, :, 1] * np.sin(phi)
+
     if colors is None:
-        ax.plot(ray_array[:, :, 2], ray_array[:, :, 0])
+        ax.plot(ray_array[:, :, 2], h_data)
     else:
+        if len(colors) == 1 and not isinstance(colors, list):
+            colors = [colors] * ray_array.shape[1]
+
         if len(colors) != ray_array.shape[1]:
             raise ValueError("len(colors) must equal ray_array.shape[1]")
         for ii in range(ray_array.shape[1]):
-            ax.plot(ray_array[:, ii, 2], ray_array[:, ii, 0], color=colors[ii])
+            ax.plot(ray_array[:, ii, 2], h_data, color=colors[ii])
 
     ax.set_xlabel("z-position")
-    ax.set_ylabel("x-position")
+    ax.set_ylabel("height")
 
     if surfaces is not None:
         for s in surfaces:
