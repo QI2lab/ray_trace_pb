@@ -1,12 +1,14 @@
 """
 Calculate ideal PSF of "snouty" oblique plane microscope (OPM)
 """
+import matplotlib
+matplotlib.use("TkAgg")
 import time
 from pathlib import Path
 import numpy as np
 from numpy import fft
 from scipy.interpolate import griddata
-import tifffile
+#import tifffile
 import raytrace.raytrace as rt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle

@@ -2,6 +2,8 @@
 Test that perfect lens gives correct phase values
 """
 import numpy as np
+import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import raytrace.raytrace as rt
 
@@ -44,3 +46,5 @@ ax.plot(h1, rays_out[3, :, -2], 'bx')
 ax = plt.subplot(1, 3, 3)
 ax.set_title("phase versus height at final surface")
 ax.plot(h1, rays_out[-1, :, -2], 'bx')
+
+plt.show()
