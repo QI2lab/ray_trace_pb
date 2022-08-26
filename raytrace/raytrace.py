@@ -20,7 +20,7 @@ col([hx, n*ux, hy, n*uy, 1]) = [[A, B, 0, 0, K],
 here K, L account for any shift between the definition fo hx, n*ux and the natural center points.
 
 z points to the right, along the optical axis. x points upwards, and y points out of the plane,
-ensuring the coordinate system is right handed
+ensuring the coordinate system is right-handed
 """
 import copy
 import numpy as np
@@ -59,20 +59,18 @@ def compute_paraxial(initial_dist, surfaces, indices_of_refraction):
     @param indices_of_refraction: indices of refraction between surfaces
     @return abcd_mat:
     """
-    abcd_mat_list = []
 
     abcd_mat = get_free_space_abcd(initial_dist)
-    abcd_mat_list.append(abcd_mat)
     for ii in range(len(surfaces)):
+        # apply ray transfer matrix for current surface
         abcd_temp = surfaces[ii].get_abcd(indices_of_refraction[ii], indices_of_refraction[ii + 1])
         abcd_mat = abcd_temp.dot(abcd_mat)
-        abcd_mat_list.append(abcd_temp)
 
+        # apply ray transfer matrix propagating between surfaces
         if ii < (len(surfaces) - 1):
             dist = np.linalg.norm(surfaces[ii].paraxial_center - surfaces[ii + 1].paraxial_center)
             abcd_prop = get_free_space_abcd(dist, n=indices_of_refraction[ii+1])
             abcd_mat = abcd_prop.dot(abcd_mat)
-            abcd_mat_list.append(abcd_prop)
 
     return abcd_mat
 
@@ -282,6 +280,28 @@ def find_cardinal_points(surfaces, indices_of_refraction, wavelength):
     return f1, f2, pp1, pp2, efl1, efl2
 
 
+def find_paraxial_collimated_distance(mat1, mat2, n):
+    """
+    Suppose we have two
+    @param mat1:
+    @param mat2:
+    @param n: index of refarction of intervening medium
+    @return distance:
+    """
+    a1 = mat1[0, 0]
+    b1 = mat1[0, 1]
+    c1 = mat1[1, 0]
+    d1 = mat1[1, 1]
+
+    a2 = mat2[0, 0]
+    b2 = mat2[0, 1]
+    c2 = mat2[1, 0]
+    d2 = mat2[1, 1]
+
+    dist = -(a1 / c1 + d2 / c2) * n
+
+    return dist
+
 # propagation and refraction
 def get_free_space_abcd(d, n=1):
     """
@@ -298,7 +318,7 @@ def get_free_space_abcd(d, n=1):
     return mat
 
 
-def refract_snell(rays, normals, n1, n2):
+def refract(rays, normals, n1, n2):
     """
     Refracts rays at surface with given normal by applying Snell's law
 
@@ -388,7 +408,7 @@ def get_ray_fan(pt, theta_max, n_thetas, wavelength, nphis=1, center_ray=(0, 0, 
     :param int n_thetas: number of rays at different angles on axis
     :param float wavelength:
     :param int nphis: number of points of rotation about the optical axis. If nphis = 1, all rays will be in the plane
-    :param str dir: "forward" or "reverse" # todo: replace with vector
+    :param center_ray:
     """
 
     # consider the central ray in direction no. Construct a n orthonormal basis from enx = y x no, eny = no x enx
@@ -419,16 +439,6 @@ def get_ray_fan(pt, theta_max, n_thetas, wavelength, nphis=1, center_ray=(0, 0, 
     rays[:, 3] = center_ray[0] * np.cos(tts) + enx[0] * np.cos(pps) * np.sin(tts) + eny[0] * np.sin(pps) * np.sin(tts)
     rays[:, 4] = center_ray[1] * np.cos(tts) + enx[1] * np.cos(pps) * np.sin(tts) + eny[1] * np.sin(pps) * np.sin(tts)
     rays[:, 5] = center_ray[2] * np.cos(tts) + enx[2] * np.cos(pps) * np.sin(tts) + eny[2] * np.sin(pps) * np.sin(tts)
-    # if dir == "forward":
-    #     rays[:, 3] = np.sin(tts) * np.cos(pps)
-    #     rays[:, 4] = np.sin(tts) * np.sin(pps)
-    #     rays[:, 5] = np.cos(tts.ravel())
-    # elif dir == "reverse":
-    #     rays[:, 3] = np.sin(tts) * np.cos(pps)
-    #     rays[:, 4] = np.sin(tts) * np.sin(pps)
-    #     rays[:, 5] = -np.cos(tts.ravel())
-    # else:
-    #     raise ValueError("'dir' must be 'forward' or 'reverse' but was '%s'" % dir)
 
     rays[:, 6] = 0
     rays[:, 7] = 2*np.pi / wavelength
@@ -439,8 +449,6 @@ def get_ray_fan(pt, theta_max, n_thetas, wavelength, nphis=1, center_ray=(0, 0, 
 def get_collimated_rays(pt, displacement_max, n_disps, wavelength, nphis=1, phi_start=0., normal=(0, 0, 1)):
     """
     Get a fan of collimated arrays along a certain direction
-
-    # todo: add initial direction argument
 
     @param pt: point in the origin plane
     @param displacement_max: maximum radial displacement
@@ -499,6 +507,10 @@ def intersect_rays(ray1, ray2):
     Find intersection point between two rays, assuming free space propagation
 
     if either s or t is negative then these rays previously intersected
+
+    @param ray1:
+    @param ray2:
+    @return intersection_pt:
     """
     ray1 = np.atleast_2d(ray1)
     ray2 = np.atleast_2d(ray2)
@@ -529,11 +541,14 @@ def intersect_rays(ray1, ray2):
     dz2 = ray2[:, 5]
 
     # intersection problem is overdetermined, so this is solution if there is one
+    # determine distance along ray1
     s = np.zeros(len(ray1)) * np.nan
     with np.errstate(invalid="ignore"):
         use_xz = dx2 * dz1 - dz2 * dx1 != 0
-        use_xy = np.logical_and(np.logical_not(use_xz), dx2 * dy1 - dy2 * dx1)
-        use_yz = np.logical_and.reduce((np.logical_not(use_xz), np.logical_not(use_xy),
+        use_xy = np.logical_and(np.logical_not(use_xz),
+                                dx2 * dy1 - dy2 * dx1)
+        use_yz = np.logical_and.reduce((np.logical_not(use_xz),
+                                        np.logical_not(use_xy),
                                         dz2 * dy1 - dy2 * dz1))
 
         s[use_xz] = (((z2 - z1) * dx1 - (x2 - x1) * dz1) / (dx2 * dz1 - dz2 * dx1))[use_xz]
@@ -541,7 +556,7 @@ def intersect_rays(ray1, ray2):
         s[use_yz] = (((y2 - y1) * dz1 - (z2 - z1) * dy1) / (dz2 * dy1 - dy2 * dz1))[use_yz]
         # otherwise, d1 \cross d2 = 0, so rays are parallel and leave as NaN
 
-    # determine t, but avoid undefined expressions
+    # determine distance along ray2, but avoid undefined expressions
     t = np.zeros(len(ray1))* np.nan
     with np.errstate(all="ignore"):
         use_z = dz1 != 0
@@ -552,15 +567,15 @@ def intersect_rays(ray1, ray2):
         t[use_y] = ((y2 + s * dy2 - y1) / dy1)[use_y]
         t[use_x] = ((x2 + s * dx2 - x1) / dx1)[use_x]
 
-    # but to verify the solution, must check actually equal
-    r1 = np.stack((x1, y1, z1), axis=1) + np.expand_dims(t, axis=1) * np.stack((dx1, dy1, dz1), axis=1)
-    r2 = np.stack((x2, y2, z2), axis=1) + np.expand_dims(s, axis=1) * np.stack((dx2, dy2, dz2), axis=1)
+    # but to verify the solution, must check intersection points are actually equal
+    intersect1 = np.stack((x1, y1, z1), axis=1) + np.expand_dims(t, axis=1) * np.stack((dx1, dy1, dz1), axis=1)
+    intersect2 = np.stack((x2, y2, z2), axis=1) + np.expand_dims(s, axis=1) * np.stack((dx2, dy2, dz2), axis=1)
 
     with np.errstate(invalid="ignore"):
-        not_sol = np.max(np.abs(r1 - r2), axis=1) > 1e-12
-        r1[not_sol] = np.nan
+        not_sol = np.max(np.abs(intersect1 - intersect2), axis=1) > 1e-12
+        intersect1[not_sol] = np.nan
 
-    return r1
+    return intersect1
 
 
 def propagate_ray2plane(rays, normal, center, n=1, exclude_backward_propagation=False):
@@ -643,9 +658,18 @@ def dist_pt2plane(pts, normal, center):
 
 
 # display
-def plot_rays(ray_array, surfaces=None, phi=0, colors=None, ax=None, **kwargs):
+def plot_rays(ray_array, surfaces: list = None, phi: float = 0, colors: list = None, label=None, ax=None, **kwargs):
     """
-    :param ray_array: nsurfaces X nrays x 8
+    Plot rays and optical surfaces
+
+    @param ray_array: nsurfaces X nrays x 8
+    @param surfaces: list of surfaces
+    @param phi: angle describing the azimuthal plane to plot. phi = 0 gives the meridional/tangential plane while
+    phi = pi/2 gives the sagittal plane. # todo: not implemented for drawing the surface projections
+    @param colors: list of colors to plot rays
+    @param ax: axis to plot results on. If None, a new figure will be generated
+    @param kwargs: passed through to figure, if it does not already exist
+    @return fig_handle, axis:
     """
 
     if ax is None:
@@ -654,18 +678,29 @@ def plot_rays(ray_array, surfaces=None, phi=0, colors=None, ax=None, **kwargs):
     else:
         figh = ax.get_figure()
 
+
+    # ray height in the desired azimuthal plane
     h_data = ray_array[:, :, 0] * np.cos(phi) + ray_array[:, :, 1] * np.sin(phi)
 
+    if label is None:
+        label = ""
+
     if colors is None:
-        ax.plot(ray_array[:, :, 2], h_data)
+        ax.plot(ray_array[:, :, 2], h_data, label=label)
     else:
+        # ensure color argument is ok
         if len(colors) == 1 and not isinstance(colors, list):
             colors = [colors] * ray_array.shape[1]
 
         if len(colors) != ray_array.shape[1]:
             raise ValueError("len(colors) must equal ray_array.shape[1]")
+
+        # plot each ray a different color
         for ii in range(ray_array.shape[1]):
-            ax.plot(ray_array[:, ii, 2], h_data, color=colors[ii])
+            if ii == 0:
+                ax.plot(ray_array[:, ii, 2], h_data[:, ii], color=colors[ii], label=label)
+            else:
+                ax.plot(ray_array[:, ii, 2], h_data[:, ii], color=colors[ii])
 
     ax.set_xlabel("z-position")
     ax.set_ylabel("height")
@@ -682,13 +717,16 @@ def plot_spot_diagram(rays, **kwargs):
     Todo: think spot diagram should have points equally spaced in the aperture
     """
     figh = plt.figure(**kwargs)
-    plt.title("Spot diagram")
+    figh.suptitle("Spot diagram")
+    ax = figh.add_subplot(1, 1, 1)
 
-    plt.plot(rays[:, 1], rays[:, 0], "b.")
-    plt.xlabel("y-position")
-    plt.ylabel("x-position")
+    ax.plot(rays[:, 1], rays[:, 0], "b.")
+    ax.set_xlabel("y-position")
+    ax.set_ylabel("x-position")
 
-    return figh
+    ax.axis("equal")
+
+    return figh, ax
 
 
 # probably better to implement surfaces like this ...
@@ -802,7 +840,7 @@ class refracting_surface(surface):
         rays_intersection[not_incoming] = np.nan
 
         # do refraction
-        rays_refracted = refract_snell(rays_intersection, normals, n1, n2)
+        rays_refracted = refract(rays_intersection, normals, n1, n2)
 
         # append these rays to full array
         ray_array = np.concatenate((ray_array, np.stack((rays_intersection, rays_refracted), axis=0)), axis=0)
@@ -1505,7 +1543,7 @@ class perfect_lens(refracting_surface):
 
         ax.plot(pts[:, 2], pts[:, 0], 'k')
 
-# optical glasses
+# optical materials
 # for information about various materials, see https://refractiveindex.info/ or https://www.schott.com
 # abbe number vd = (nd - 1) / (nf - nc)
 # vd > 50 = crown glass, otherwise flint glass
@@ -1524,20 +1562,32 @@ class material():
         self.c1, self.c2, self.c3 = np.array(c_coeffs).squeeze()
 
         # abbe number (measure of dispersion)
-        self.vd = (self.n(self.wd) - 1) / (self.n(self.wf) - self.n(self.wc))
+        with np.errstate(invalid="ignore"):
+            self.vd = (self.n(self.wd) - 1) / (self.n(self.wf) - self.n(self.wc))
 
     def n(self, wavelength):
         """
         compute index of refraction from Sellmeier dispersion formula
 
         see https://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf
-        for information about various materials, see https://refractiveindex.info/
         """
         val = self.b1 * wavelength ** 2 / (wavelength ** 2 - self.c1) + \
               self.b2 * wavelength ** 2 / (wavelength ** 2 - self.c2) + \
               self.b3 * wavelength ** 2 / (wavelength ** 2 - self.c3)
         return np.sqrt(val + 1)
 
+
+class vacuum(material):
+    def __init__(self):
+        bs = [0., 0., 0.]
+        cs = [0., 0., 0.]
+        super(vacuum, self).__init__(bs, cs)
+
+class constant(material):
+    def __init__(self, n):
+        bs = [n, 0, 0]
+        cs = [0, 0, 0]
+        super(constant, self).__init__(bs, cs)
 
 class fused_silica(material):
     def __init__(self):
@@ -1586,6 +1636,15 @@ class sf10(material):
         super(sf10, self).__init__(bs, cs)
 
 
+class nsf6(material):
+    """
+    https://www.schott.com/shop/advanced-optics/en/Optical-Glass/N-SF6/c/glass-N-SF6
+    """
+    def __init__(self):
+        bs = [1.77931763, 0.338149866, 2.087344740]
+        cs = [0.01337141820, 0.0617533621, 174.0175900]
+        super(nsf6, self).__init__(bs, cs)
+
 class sf6(material):
     """
     https://www.schott.com/shop/advanced-optics/en/Optical-Glass/SF6/c/glass-SF6
@@ -1595,6 +1654,14 @@ class sf6(material):
         cs = [0.01348719470, 0.0569318095, 118.5571850]
         super(sf6, self).__init__(bs, cs)
 
+class nsf6ht(material):
+    """
+    https://www.schott.com/shop/advanced-optics/en/Optical-Glass/N-SF6HT/c/glass-N-SF6HT
+    """
+    def __init__(self):
+        bs = [1.77931763, 0.338149866, 2.087344740]
+        cs = [0.01337141820, 0.0617533621, 174.0175900]
+        super(nsf6ht, self).__init__(bs, cs)
 
 class sf2(material):
     def __init__(self):
