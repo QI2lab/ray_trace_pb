@@ -7,24 +7,40 @@ import numpy as np
 import matplotlib.pyplot as plt
 import raytrace.raytrace as rt
 
-lens_name = "AC508-100-B"
-bfl_thor = 91.5
-efl_thor = 100
+# lens_name = "AC508-100-B"
+# bfl_thor = 91.5
+# efl_thor = 100
+# # import materials
+# crown = rt.nlak22()
+# flint = rt.nsf6ht()
+# # set lens parameters
+# radius = 25.4
+# lens_start = 300
+# tcrown = 13.0
+# rcrown = 65.8
+# rint = -56
+# tflint = 2.0
+# rflint = -280.6
+# design_wavelengths = np.array([0.7065, 0.855, 1.015])
+
+lens_name = "AC508-180-AB"
+bfl_thor = 173.52
+efl_thor = 180
 # import materials
 crown = rt.nlak22()
-flint = rt.sf6()
+flint = rt.nsf6()
 # set lens parameters
 radius = 25.4
 lens_start = 300
-tcrown = 13.0
-rcrown = 65.8
-rint = -56
-tflint = 2.0
-rflint = -280.6
+tcrown = 9.5
+rcrown = 144.4
+rint = -115.4
+tflint = 4.0
+rflint = -328.2
+design_wavelengths = np.array([0.488, 0.707, 1.064])
 
 # set ray numbers and wavelengths
 nrays = 11
-design_wavelengths = np.array([0.7065, 0.855, 1.015])
 max_displacement = 10
 
 # initialize arrays to store results
