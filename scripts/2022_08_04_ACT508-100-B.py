@@ -40,7 +40,7 @@ rflint = -328.2
 design_wavelengths = np.array([0.488, 0.707, 1.064])
 
 # set ray numbers and wavelengths
-nrays = 11
+nrays = 101
 max_displacement = 10
 
 # initialize arrays to store results
@@ -64,7 +64,7 @@ for ii, wl in enumerate(design_wavelengths):
     ns = [1, crown.n(wl), flint.n(wl), 1]
 
     # compute effective focal lengths and principle plans using paraxial optics
-    abcd = rt.compute_paraxial(lens_start, surfaces, ns)
+    abcd = rt.compute_paraxial(surfaces, ns, initial_distance=lens_start)
     dx, abcd_focal, eflx, dy, abcd_focal_y, efly = rt.find_paraxial_focus(abcd)
 
     # determine focal points
@@ -80,8 +80,8 @@ for ii, wl in enumerate(design_wavelengths):
     print(f"bfl = {bfls[ii]:.3f}mm")
 
     # add surface at focus
-    # surfaces, ns = rt.auto_focus(surfaces, ns, mode="paraxial")
-    surfaces, ns = rt.auto_focus(surfaces, ns, mode="collimated")
+    surfaces, ns = rt.auto_focus(surfaces, ns, mode="paraxial-collimated")
+    # surfaces, ns = rt.auto_focus(surfaces, ns, mode="collimated")
 
     # initialize collimated rays and ray trace to look at spherical aberration
     rays = rt.get_collimated_rays([0, 0, 0], max_displacement, nrays, wl)

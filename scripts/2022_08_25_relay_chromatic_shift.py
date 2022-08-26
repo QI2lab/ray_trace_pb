@@ -41,7 +41,7 @@ efl180 = 180
 
 z180 = 10
 # z100 = (t180c + t180f) + bfl180 + 100
-z100 = (t180c + t180f) + 274.85
+z100 = z180 + (t180c + t180f) + 264.85
 zend = z100 + 30
 
 surfaces = \
@@ -71,21 +71,25 @@ ns1 = [m.n(w1) for m in materials]
 ns2 = [m.n(w2) for m in materials]
 
 # todo: these paraxial calculations still not working
-rt1_w1 = rt.compute_paraxial(0, surfaces[:3], ns1[:4])
-rt2_w1 = rt.compute_paraxial(0, surfaces[3:6], ns1[3:7])
-d1 = rt.find_paraxial_collimated_distance(rt1_w1, rt2_w1, 1)
+rt1_w1 = rt.compute_paraxial(surfaces[:3], ns1[:4])
+rt2_w1 = rt.compute_paraxial(surfaces[3:6], ns1[3:7])
+d1, _ = rt.find_paraxial_collimated_distance(rt1_w1, rt2_w1, 1)
 fs1 = np.array([[1, d1], [1, 0]])
 test = rt2_w1[:2, :2].dot(fs1.dot(rt1_w1[:2, :2]))
 
-rt1_w2 = rt.compute_paraxial(0, surfaces[:3], ns2[:4])
-rt2_w2 = rt.compute_paraxial(0, surfaces[3:6], ns2[3:7])
-d2 = rt.find_paraxial_collimated_distance(rt1_w2, rt2_w2, 1)
+rt1_w2 = rt.compute_paraxial(surfaces[:3], ns2[:4])
+rt2_w2 = rt.compute_paraxial(surfaces[3:6], ns2[3:7])
+d2, _ = rt.find_paraxial_collimated_distance(rt1_w2, rt2_w2, 1)
+
+print(f"Collimated at {w1 * 1e3:.1f}nm for lens distance of {d1:.5f}mm")
+print(f"Collimated at {w2 * 1e3:.1f}nm for lens distance of {d2:.5f}mm")
+print(f"Lens shift is {d1 - d2:.5f}mm")
 
 
+# do ray tracing
 rays1 = rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, w1)
 rays2 = rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, w2)
 
-# do ray tracing
 rays1 = rt.ray_trace_system(rays1, surfaces, ns1)
 rays2 = rt.ray_trace_system(rays2, surfaces, ns2)
 
