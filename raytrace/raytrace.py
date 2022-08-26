@@ -50,29 +50,42 @@ def ray_trace_system(rays, surfaces, indices_of_refraction):
     return rays
 
 
-def compute_paraxial(initial_dist, surfaces, indices_of_refraction):
+def compute_paraxial(surfaces, indices_of_refraction, initial_distance=0, final_distance=0):
     """
-    Generate the ABCD matrix for the entire optical system
+    Generate the ray transfer (ABCD) matrix for an optical system
 
-    @param initial_dist: distance from the ray launching surface to the first surface in the optical system
+    Assume that the optical system starts at the provided initial distance before the first surface
+
+    @param initial_distance: distance from the ray launching surface to the first surface in the optical system
     @param surfaces: list of surfaces in the optical system
     @param indices_of_refraction: indices of refraction between surfaces
     @return abcd_mat:
     """
+    mats = [] # helpful for debugging
 
-    abcd_mat = get_free_space_abcd(initial_dist)
+    # propagate initial distance
+    ray_xfer_mat = get_free_space_abcd(initial_distance, n=indices_of_refraction[0])
+    mats.append(ray_xfer_mat)
+
     for ii in range(len(surfaces)):
         # apply ray transfer matrix for current surface
         abcd_temp = surfaces[ii].get_abcd(indices_of_refraction[ii], indices_of_refraction[ii + 1])
-        abcd_mat = abcd_temp.dot(abcd_mat)
+        ray_xfer_mat = abcd_temp.dot(ray_xfer_mat)
+        mats.append(abcd_temp)
 
         # apply ray transfer matrix propagating between surfaces
         if ii < (len(surfaces) - 1):
             dist = np.linalg.norm(surfaces[ii].paraxial_center - surfaces[ii + 1].paraxial_center)
             abcd_prop = get_free_space_abcd(dist, n=indices_of_refraction[ii+1])
-            abcd_mat = abcd_prop.dot(abcd_mat)
+            ray_xfer_mat = abcd_prop.dot(ray_xfer_mat)
+            mats.append(abcd_prop)
 
-    return abcd_mat
+    # propagate final distance
+    ray_xfer_temp = get_free_space_abcd(final_distance, n=indices_of_refraction[-1])
+    ray_xfer_mat = ray_xfer_temp.dot(ray_xfer_mat)
+    mats.append(ray_xfer_temp)
+
+    return ray_xfer_mat
 
 
 def get_reversed_system(surfaces, indices_of_refraction):
@@ -173,25 +186,29 @@ def compute_third_order_seidel(surfaces, indices_of_refraction):
 # helper methods for finding focus, cardinal points, etc.
 def auto_focus(surfaces, indices_of_refraction, mode="ray-fan"):
     """
-    Perform auto-focus operation
+    Perform auto-focus operation. This function can handle rays which are initially collimated or initially diverging
 
     # todo: handle case where optical system extends past focus
 
     :param list surfaces: list of surfaces, which should start with the surfaces the rays are incident from
     :param indices_of_refraction: list of indices of refraction betweeen surfaces
     :param wavelength:
-    :param mode: "ray-fan" or "collimated"
+    :param mode: "ray-fan", "collimated", "paraxial-focused", or "paraxial-collimated"
     :return updated_surfaces, updated_n:
     """
-    # todo: maybe take sequence of rays with smaller and smaller angles...
     if mode == "ray-fan":
+        # todo: maybe take sequence of rays with smaller and smaller angles...
         rays_focus = get_ray_fan([0, 0, 0], 1e-9, 3, 1)
-
         rays_focus = ray_trace_system(rays_focus, surfaces, indices_of_refraction)
         focus = intersect_rays(rays_focus[-1, 1], rays_focus[-1, 2])[0, 2]
-    elif mode == "paraxial":
-        abcd = compute_paraxial(0, surfaces, indices_of_refraction)
-        # determine what free space propagation matrix we need to use to get total ABCD matrix with B = 0
+    elif mode == "collimated":
+        rays_focus = get_collimated_rays([0, 0, 0], 1e-9, 3, 1)
+        rays_focus = ray_trace_system(rays_focus, surfaces, indices_of_refraction)
+        focus = intersect_rays(rays_focus[-1, 1], rays_focus[-1, 2])[0, 2]
+
+    elif mode == "paraxial-focused":
+        abcd = compute_paraxial(surfaces, indices_of_refraction, initial_distance=0, final_distance=0)
+        # determine what free space propagation matrix we need such that initial ray (0, n*theta) -> (0, n'*theta')
         dx = -abcd[0, 1] / abcd[1, 1] * indices_of_refraction[-1]
         dy = -abcd[2, 3] / abcd[3, 3] * indices_of_refraction[-1]
 
@@ -199,13 +216,18 @@ def auto_focus(surfaces, indices_of_refraction, mode="ray-fan"):
             warnings.warn("dx and dy focus differs")
 
         focus = surfaces[-1].paraxial_center[2] + 0.5 * (dx + dy) * np.sign(surfaces[-1].input_axis[2])
+    elif mode == "paraxial-collimated":
+        abcd = compute_paraxial(surfaces, indices_of_refraction, initial_distance=0, final_distance=0)
+        # determine what free space propagation matrix we need such that initial ray (h, n*theta) -> (0, n'*theta')
+        dx = -abcd[0, 0] / abcd[1, 0] * indices_of_refraction[-1]
+        dy = -abcd[2, 2] / abcd[3, 2] * indices_of_refraction[-1]
 
-    elif mode == "collimated":
-        rays_focus = get_collimated_rays([0, 0, 0], 1e-9, 3, 1)
-        rays_focus = ray_trace_system(rays_focus, surfaces, indices_of_refraction)
-        focus = intersect_rays(rays_focus[-1, 1], rays_focus[-1, 2])[0, 2]
+        if np.abs(dx - dy) >= 1e-12:
+            warnings.warn("dx and dy focus differs")
+
+        focus = surfaces[-1].paraxial_center[2] + 0.5 * (dx + dy) * np.sign(surfaces[-1].input_axis[2])
     else:
-        raise ValueError("mode must be 'ray-fan', 'paraxial', or 'collimated' but was '%s'" % mode)
+        raise ValueError(f"mode must be 'ray-fan', 'paraxial', or 'collimated' but was '{mode:s}'")
 
     updated_surfaces = surfaces + [flat_surface([0, 0, focus], surfaces[-1].input_axis, surfaces[-1].aperture_rad)]
     updated_n = indices_of_refraction + [indices_of_refraction[-1]]
@@ -282,25 +304,19 @@ def find_cardinal_points(surfaces, indices_of_refraction, wavelength):
 
 def find_paraxial_collimated_distance(mat1, mat2, n):
     """
-    Suppose we have two
+    Given two sets of surfaces (e.g. two lenses) determine the distance which should be inserted between them
+    to give a system which converts collimated rays to colliamted rays
+
     @param mat1:
     @param mat2:
-    @param n: index of refarction of intervening medium
+    @param n: index of refraction of intervening medium
     @return distance:
     """
-    a1 = mat1[0, 0]
-    b1 = mat1[0, 1]
-    c1 = mat1[1, 0]
-    d1 = mat1[1, 1]
 
-    a2 = mat2[0, 0]
-    b2 = mat2[0, 1]
-    c2 = mat2[1, 0]
-    d2 = mat2[1, 1]
+    dx = -(mat1[0, 0] / mat1[1, 0] + mat2[1, 1] / mat2[1, 0]) * n
+    dy = -(mat1[2, 2] / mat1[3, 2] + mat2[3, 3] / mat2[3, 2]) * n
 
-    dist = -(a1 / c1 + d2 / c2) * n
-
-    return dist
+    return dx, dy
 
 # propagation and refraction
 def get_free_space_abcd(d, n=1):
