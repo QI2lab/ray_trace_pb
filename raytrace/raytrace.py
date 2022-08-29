@@ -745,6 +745,42 @@ def plot_spot_diagram(rays, **kwargs):
     return figh, ax
 
 
+class system:
+    """
+    Collection of surfaces
+    """
+
+    def __init__(self, surfaces, materials):
+        """
+
+        @param surfaces: length n
+        @param ns: length n-1
+        """
+        if len(materials) != (len(surfaces) - 1):
+            raise ValueError()
+
+        self.surfaces = surfaces
+        self.materials = materials
+
+    def reverse(self):
+        surfaces_rev = [copy.deepcopy(self.surfaces[-ii]) for ii in range(1, len(self.surfaces) + 1)]
+
+        for ii in range(len(self.surfaces)):
+            surfaces_rev[ii].input_axis *= -1
+            surfaces_rev[ii].output_axis *= -1
+
+        materials_rev = [self.materials[-ii] for ii in range(1, len(self.materials) + 1)]
+
+        return system(surfaces_rev, materials_rev)
+
+    def concatenate(self, other, material):
+        # todo: need to add distance in between
+        s = self.surfaces + other.surfaces
+        materials = self.materials + [material] + other.materials
+        return system(s, materials)
+
+
+
 # probably better to implement surfaces like this ...
 class surface:
     def __init__(self, input_axis, output_axis, paraxial_center, aperture_rad, is_aperture_stop=False):
