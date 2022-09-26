@@ -225,7 +225,6 @@ rays = np.concatenate((rt.get_ray_fan([0, 0, 0], max_angle, nrays, wavelength_od
                        rt.get_ray_fan([sep, 0, lateral_shift], max_angle, nrays, wavelength_odt)),
                       axis=0)
 
-
 rays = rt.ray_trace_system(rays, surfaces_odt, materials)
 
 # #######################################
