@@ -40,7 +40,7 @@ surfaces = [rt.perfect_lens(f1, [0, 0, n1*f1], [0, 0, 1], alpha_obj),  # O1
             rt.perfect_lens(f_tube_lens, [0, 0, n1*f1 + f1 + f_tube_lens], [0, 0, 1], na_img),  # tube lens #1
             rt.flat_surface([0, 0, n1*f1 + f1 + 2*f_tube_lens], [0, 0, 1], r1)  # imaging plane
             ]
-ns = [n1, 1, 1, 1, 1]
+materials = [rt.constant(n1), rt.vacuum(), rt.vacuum(), rt.vacuum(), rt.vacuum()]
 
 # define grid in pupil
 # dxy = 10e-3
@@ -80,10 +80,10 @@ for ii in range(nz):
     print("ray tracing z-plane %d/%d, elapsed time %0.2fs" % (ii + 1, nz, time.perf_counter() - tstart), end="\r")
 
     # ray tracing
-    rays = rt.get_ray_fan([0, 0, zs[ii]], alpha_obj, 101, wavelength=wavelength, nphis=51)
+    rays = rt.get_ray_fan([0, 0, zs[ii]], alpha_obj, 101, wavelength, nphis=51)
     # rays = rt.get_collimated_rays([dx, dy, dz], 1, 101, wavelength=wavelength, nphis=51,
     #                               normal=[0, np.sin(10*np.pi/180), np.cos(10*np.pi/180)])
-    rays = rt.ray_trace_system(rays, surfaces, ns)
+    rays = rt.ray_trace_system(rays, surfaces, materials)
 
     # beam in pupil
     ind = 4

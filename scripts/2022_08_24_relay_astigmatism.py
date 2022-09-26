@@ -81,11 +81,11 @@ nlak22 = rt.nlak22()
 nsf6 = rt.nsf6()
 nsf6ht = rt.nsf6ht()
 
-ns = [1,
-      nlak22.n(wavelength), nsf6.n(wavelength), 1, #AC508-180-AB-ML
-      nsf6ht.n(wavelength), nlak22.n(wavelength), 1, #AC508-100-B-ML
-      nlak22.n(wavelength), nsf6.n(wavelength), 1, # AC508-300-AB-ML
-      1]
+materials = [rt.constant(1),
+             rt.nlak22(), rt.nsf6(), rt.constant(1), #AC508-180-AB-ML
+             rt.nsf6ht(), rt.nlak22(), rt.constant(1), #AC508-100-B-ML
+             rt.nlak22(), rt.nsf6(), rt.constant(1), # AC508-300-AB-ML
+             rt.constant(1)]
 
 
 rays = np.concatenate((rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, wavelength), # distributed along meridional plane
@@ -94,7 +94,7 @@ rays = np.concatenate((rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, wavele
                        ), axis=0)
 
 # do ray tracing
-rays = rt.ray_trace_system(rays, surfaces, ns)
+rays = rt.ray_trace_system(rays, surfaces, materials)
 
 # estimate focus
 f_meridional = rt.intersect_rays(rays[-2, nrays//2 - 1], rays[-2, nrays//2 + 1])

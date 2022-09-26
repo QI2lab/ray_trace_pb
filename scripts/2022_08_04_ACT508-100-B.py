@@ -61,14 +61,15 @@ for ii, wl in enumerate(design_wavelengths):
                 ]
 
     # if there are n surfaces, want n+1 indices of refraction, giving values in between surfaces
-    ns = [1, crown.n(wl), flint.n(wl), 1]
+    materials = [rt.vacuum(), crown, flint, rt.vacuum()]
+    ns = [m.n(wl) for m in materials]
 
     # compute effective focal lengths and principle plans using paraxial optics
     abcd = rt.compute_paraxial(surfaces, ns, initial_distance=lens_start)
     dx, abcd_focal, eflx, dy, abcd_focal_y, efly = rt.find_paraxial_focus(abcd)
 
     # determine focal points
-    f1, f2, pp1, pp2, efl1, efl2 = rt.find_cardinal_points(surfaces, ns, wl)
+    f1, f2, pp1, pp2, efl1, efl2 = rt.find_cardinal_points(surfaces, materials, wl)
     efls[ii] = efl2
     ffl = lens_start - f1[0, 2]
     bfls[ii] = f2[0, 2] - (lens_start + tcrown + tflint)
@@ -80,12 +81,12 @@ for ii, wl in enumerate(design_wavelengths):
     print(f"bfl = {bfls[ii]:.3f}mm")
 
     # add surface at focus
-    surfaces, ns = rt.auto_focus(surfaces, ns, mode="paraxial-collimated")
+    surfaces, materials = rt.auto_focus(surfaces, materials, wl, mode="paraxial-collimated")
     # surfaces, ns = rt.auto_focus(surfaces, ns, mode="collimated")
 
     # initialize collimated rays and ray trace to look at spherical aberration
     rays = rt.get_collimated_rays([0, 0, 0], max_displacement, nrays, wl)
-    rays = rt.ray_trace_system(rays, surfaces, ns)
+    rays = rt.ray_trace_system(rays, surfaces, materials)
 
     # plot results
     figh , ax = rt.plot_rays(rays, surfaces, figsize=(16, 8))

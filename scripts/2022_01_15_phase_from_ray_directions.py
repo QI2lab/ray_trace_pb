@@ -27,21 +27,20 @@ surfaces = [
     #rt.flat_surface([0, 0, lens_start + t200c + t200f + 0], [0, 0, 1], aperture_radius)
     ]
 
-bk7 = rt.bk7()
-sf2 = rt.sf2()
-ns = [1,
-      1, sf2.n(wavelength), bk7.n(wavelength), 1,
-      ]
+materials = [rt.constant(1),
+             rt.constant(1), rt.sf2(), rt.bk7(), rt.constant(1),
+             ]
+
 
 # auto-focus
-surfaces, ns = rt.auto_focus(surfaces, ns, mode="paraxial")
+surfaces, materials = rt.auto_focus(surfaces, materials, wavelength, mode="paraxial-focused")
 
-abcd = rt.compute_paraxial(400, surfaces, ns)
+abcd = rt.compute_paraxial(surfaces, [m.n(wavelength) for m in materials], 400)
 
 # ray trace
 nrays = 101
 rays = rt.get_ray_fan([0, 0, 0], 1*np.pi/180, nrays, wavelength)
-rays = rt.ray_trace_system(rays, surfaces, ns)
+rays = rt.ray_trace_system(rays, surfaces, materials)
 
 # plot results
 rt.plot_rays(rays, surfaces)

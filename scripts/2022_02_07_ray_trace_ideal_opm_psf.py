@@ -79,7 +79,8 @@ surfaces = [rt.perfect_lens(f1, [0, 0, p_o1], [0, 0, 1], alpha1),  # O1
             rt.flat_surface(p_pupil_o3, o3_normal, r3), # pupil of 03
             rt.perfect_lens(f_tube_lens_3, p_t3, o3_normal, alpha3),  # tube lens #3
             rt.flat_surface(p_imag, o3_normal, aperture_rad)]
-ns = [n1, 1, 1, 1, 1, 1, n2, n3, 1, 1, 1, 1]
+materials = [rt.constant(n1), rt.vacuum(), rt.vacuum(), rt.vacuum(), rt.vacuum(), rt.vacuum(),
+             rt.constant(n2), rt.constant(n3), rt.vacuum(), rt.vacuum(), rt.vacuum(), rt.vacuum()]
 
 # setup grid in 03 pupil
 dxy = 5e-3
@@ -122,7 +123,7 @@ for ii in range(npos):
     # zpos = xs[ii] * np.tan(theta)
     zpos = 0
     rays = rt.get_ray_fan([xs[ii], 0, zpos], alpha1, 101, wavelength=wavelength, nphis=51)
-    rays = rt.ray_trace_system(rays, surfaces, ns)
+    rays = rt.ray_trace_system(rays, surfaces, materials)
 
     # ##################################
     # plot rays in O1 pupil

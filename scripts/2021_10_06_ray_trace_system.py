@@ -159,21 +159,21 @@ surfaces_detection_odt = \
                 ]
 surfaces_odt = surfaces_excitation_odt + surfaces_detection_odt
 
-ns_excitation_odt = [1,
-                    sf2.n(wavelength_odt), bk7.n(wavelength_odt), 1,
-                    sf10.n(wavelength_odt), nbaf10.n(wavelength_odt), 1,
-                    bk7.n(wavelength_odt), sf2.n(wavelength_odt), 1,
-                    sf2.n(wavelength_odt), bk7.n(wavelength_odt), 1,
-                    1.5]
-ns_detection_odt = [1.33,
-                    1, 1,
-                    bk7.n(wavelength_odt), sf2.n(wavelength_odt), 1,
-                    1]
+materials_excitation_odt = [rt.constant(1),
+                            rt.sf2(), rt.bk7(), rt.constant(1),
+                            rt.sf10(), rt.nbaf10(), rt.constant(1),
+                            rt.bk7(), rt.sf2(), rt.constant(1),
+                            rt.sf2(), rt.bk7(), rt.constant(1),
+                            rt.constant(1.5)]
+materials_detection_odt = [rt.constant(1.333),
+                           rt.constant(1), rt.constant(1),
+                           rt.bk7(), rt.sf2(), rt.constant(1),
+                           rt.constant(1)]
 
-ns_odt = ns_excitation_odt + ns_detection_odt
+materials_odt = materials_excitation_odt + materials_detection_odt
 
 # determine focal points
-f1, f2, pp1, pp2, efl1, efl2 = rt.find_cardinal_points(surfaces_odt, ns_odt, wavelength_odt)
+f1, f2, pp1, pp2, efl1, efl2 = rt.find_cardinal_points(surfaces_odt, materials_odt, wavelength_odt)
 ffl = l1s_odt - f1[0, 2]
 bfl = f2[0, 2] - l5e_odt
 print("efl (back) = %0.3fmm" % efl1)
@@ -182,7 +182,7 @@ print("ffl = %0.3fmm" % ffl)
 print("bfl = %0.3fmm" % bfl)
 
 # autofocus
-# surfaces_odt, ns_odt = rt.auto_focus(surfaces_odt, ns_odt, wavelength)
+# surfaces_odt, materials_odt = rt.auto_focus(surfaces_odt, materials_odt, wavelength)
 
 # dm = 7.56
 # mirror_rad = 5
@@ -202,7 +202,7 @@ rays = np.concatenate((rt.get_ray_fan([0, 0, 0], max_angle, nrays, wavelength_od
                       axis=0)
 
 
-rays = rt.ray_trace_system(rays, surfaces_odt, ns_odt)
+rays = rt.ray_trace_system(rays, surfaces_odt, materials_odt)
 
 # plot results
 figh = rt.plot_rays(rays, surfaces_odt, colors=["k"] * nrays + ["b"] * nrays + ["r"] * nrays + ["g"] * nrays, figsize=(16, 8))
@@ -212,7 +212,7 @@ plt.suptitle("ODT")
 
 # fluorescence odt
 rays_fl_odt = rt.get_ray_fan([0, 0, focal_plane], np.arcsin(0.55 / 1.33), nrays, wavelength_odt)
-rays_fl_odt = rt.ray_trace_system(rays_fl_odt, surfaces_detection_odt, ns_detection_odt)
+rays_fl_odt = rt.ray_trace_system(rays_fl_odt, surfaces_detection_odt, materials_detection_odt)
 
 figh = rt.plot_rays(rays_fl_odt, surfaces_detection_odt, figsize=(16, 8))
 ax = plt.gca()
@@ -250,11 +250,13 @@ surfaces_sim = [# ACT508-200-A-ML
                 rt.flat_surface([0, 0, l4s_sim + 1.5 * 1.8], [0, 0, 1], 0.13)
                 ]
 
-ns_sim_colors = [[1,
-                 sf2.n(wavelength), bk7.n(wavelength), 1,
-                 bk7.n(wavelength), sf2.n(wavelength), 1,
-                 sf2.n(wavelength), bk7.n(wavelength), 1,
-                 1.5, 1.5] for wavelength in wavelengths_sim]
+materials_sim = [rt.constant(1),
+                 rt.sf2(), rt.bk7(), rt.constant(1),
+                 rt.bk7(), rt.sf2(), rt.constant(1),
+                 rt.sf2(), rt.bk7(), rt.constant(1),
+                 rt.constant(1.5), rt.constant(1.5)
+                 ]
+
 
 # surfaces_sim, ns_sim = rt.auto_focus(surfaces_sim, ns_sim, wavelength)
 
@@ -270,7 +272,7 @@ rays_sim = [np.concatenate((rt.get_ray_fan([0, 0, 0], max_angle, nrays, waveleng
 
 
 for ii in range(len(rays_sim)):
-    rays_sim[ii] = rt.ray_trace_system(rays_sim[ii], surfaces_sim, ns_sim_colors[ii])
+    rays_sim[ii] = rt.ray_trace_system(rays_sim[ii], surfaces_sim, materials_sim)
 
 
 # plot results
@@ -282,7 +284,7 @@ plt.suptitle("SIM")
 
 # phase at first pupil
 pupil1 = rt.flat_surface([0, 0, l1e_sim + 200], [0, 0, 1], radius)
-rays_pupil1 = rt.ray_trace_system(rays_sim[0][6], [pupil1], [1, 1])
+rays_pupil1 = rt.ray_trace_system(rays_sim[0][6], [pupil1], [rt.constant(1), rt.constant(1)])
 
 figh = plt.figure()
 for ii in range(4):
@@ -302,7 +304,7 @@ piston = pfit[-1] - defocus + spherical
 
 # phase at last pupil
 pupil_last = rt.flat_surface([0, 0, l4s_sim - 1.8], [0, 0, 1], radius)
-rays_pupil_last = rt.ray_trace_system(rays_sim[0][18], [pupil_last], [1, 1])
+rays_pupil_last = rt.ray_trace_system(rays_sim[0][18], [pupil_last], [rt.constant(1), rt.constant(1)])
 
 figh = plt.figure()
 for ii in range(4):

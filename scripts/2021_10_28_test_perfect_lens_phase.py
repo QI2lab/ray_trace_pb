@@ -7,40 +7,60 @@ matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import raytrace.raytrace as rt
 
+# #########################
+# define optical system
+# #########################
 wavelength = 0.785
-k = 2*np.pi/ wavelength
+aperture = 10
 n1 = 1.1
 n2 = 1.3
 f = 4
-nrays = 7
-rays = rt.get_collimated_rays([0, 0, -1], 3, nrays, wavelength, normal=[np.sin(10 * np.pi/180), 0, np.cos(10*np.pi/180)])
-# rays[-1, -2] -= 1
+na = 1
+alpha = np.arcsin(na / n1)
 
-surfaces = [rt.flat_surface([0, 0, 0], [0, 0, 1], 10),
-            rt.perfect_lens(f, [0, 0, n1 * f], [0, 0, 1], 10),
-            rt.flat_surface([0, 0, n1*f + n2*f], [0, 0, 1], 10)
+surfaces = [rt.flat_surface([0, 0, 0], [0, 0, 1], aperture),
+            rt.perfect_lens(f, [0, 0, n1 * f], [0, 0, 1], alpha),
+            rt.flat_surface([0, 0, n1*f + n2*f], [0, 0, 1], aperture)
             ]
-ns = [n1, n1, n2, n2]
 
-rays_out = rt.ray_trace_system(rays, surfaces, ns)
+materials = [rt.constant(n1),
+             rt.constant(n1),
+             rt.constant(n2),
+             rt.constant(n2)]
+
+# #########################
+# define rays
+# #########################
+nrays = 7
+angle = 10 * np.pi/ 180
+rays = rt.get_collimated_rays([0, 0, -1], 3, nrays, wavelength,
+                              normal=[np.sin(angle), 0, np.cos(angle)])
+
+# #########################
+# ray trace system
+# #########################
+rays_out = rt.ray_trace_system(rays, surfaces, materials)
 
 rt.plot_rays(rays_out, surfaces)
 
-figh = plt.figure(figsize=(16, 8))
-
-sin_t1 = rays_out[1, :, 3] / rays_out[1, :, 5]
+# #########################
+# plot phase information
+# #########################
+sin_t1 = np.sin(np.arctan(rays_out[1, :, 3] / rays_out[1, :, 5]))
 h1 = rays_out[1, :, 0]
+
+phi_expected = n1 * 2*np.pi / wavelength * h1 * sin_t1
+
+figh = plt.figure(figsize=(16, 8))
 
 ax = plt.subplot(1, 3, 1)
 ax.set_title("phase versus height at FFP")
-phi_off = rays_out[1, nrays//2, 6]
-ax.plot(h1, k * h1 * n1 * sin_t1 + phi_off, 'r')
+ax.plot(h1, phi_expected + rays_out[1, nrays//2, 6], 'r')
 ax.plot(h1, rays_out[1, :, -2], 'bx')
 
 ax = plt.subplot(1, 3, 2)
 ax.set_title("phase versus height at first lens surface")
-phi_off = rays_out[3, nrays//2, 6]
-ax.plot(h1, k * h1 * n1 * sin_t1 + phi_off, 'r')
+ax.plot(h1, phi_expected + rays_out[3, nrays//2, 6], 'r')
 ax.plot(h1, rays_out[3, :, -2], 'bx')
 
 ax = plt.subplot(1, 3, 3)

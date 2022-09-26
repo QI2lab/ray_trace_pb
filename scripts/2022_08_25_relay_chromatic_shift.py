@@ -57,15 +57,10 @@ surfaces = \
             rt.flat_surface([0, 0, zend], [0, 0, 1], radius)
             ]
 
-nlak22 = rt.nlak22()
-nsf6 = rt.nsf6()
-nsf6ht = rt.nsf6ht()
-vacuum = rt.vacuum()
-
-materials = [vacuum,
-             nlak22, nsf6, vacuum, #AC508-180-AB-ML
-             nsf6ht, nlak22, vacuum, #AC508-100-B-ML
-             vacuum]
+materials = [rt.vacuum(),
+             rt.nlak22(), rt.nsf6(), rt.vacuum(), #AC508-180-AB-ML
+             rt.nsf6ht(), rt.nlak22(), rt.vacuum(), #AC508-100-B-ML
+             rt.vacuum()]
 
 ns1 = [m.n(w1) for m in materials]
 ns2 = [m.n(w2) for m in materials]
@@ -90,8 +85,8 @@ print(f"Lens shift is {d1 - d2:.5f}mm")
 rays1 = rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, w1)
 rays2 = rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, w2)
 
-rays1 = rt.ray_trace_system(rays1, surfaces, ns1)
-rays2 = rt.ray_trace_system(rays2, surfaces, ns2)
+rays1 = rt.ray_trace_system(rays1, surfaces, materials)
+rays2 = rt.ray_trace_system(rays2, surfaces, materials)
 
 figh, ax = rt.plot_rays(rays1, surfaces, colors="r", label=f"{w1 * 1e3:.1f}nm", figsize=(16, 8))
 rt.plot_rays(rays2, surfaces, colors="g", label=f"{w2 * 1e3:.1f}nm", ax=ax)

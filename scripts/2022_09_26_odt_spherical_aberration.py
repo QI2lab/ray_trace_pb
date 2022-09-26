@@ -3,8 +3,8 @@ Simulate full SIM/ODT optical setup
 """
 import matplotlib
 matplotlib.use("TkAgg")
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import raytrace.raytrace as rt
 
 wavelength_odt = 0.785
@@ -126,6 +126,40 @@ l7s_odt = l7s_odt + t200c + t200f
 
 camera_pos = l7s_odt + bfl200_old + 11.2
 
+l1 = rt.system([# ACT508-200-A-ML
+                rt.spherical_surface.get_on_axis(r200f, 0, radius),
+                rt.spherical_surface.get_on_axis(r200i, t200f, radius),
+                rt.spherical_surface.get_on_axis(r200c, t200c + t200f, radius)
+                ],
+                [sf2.n(wavelength_odt), bk7.n(wavelength_odt)]
+                )
+
+l2 = rt.system([# AC508-100-A-ML, seems like should have put other way in system?
+                rt.spherical_surface.get_on_axis(r100f, 0, radius),
+                rt.spherical_surface.get_on_axis(r100i, t100f, radius),
+                rt.spherical_surface.get_on_axis(r100c, t100c + t100f, radius)],
+                [sf10.n(wavelength_odt), nbaf10.n(wavelength_odt)])
+
+l3 = rt.system([# AC508-400-A-ML
+                rt.spherical_surface.get_on_axis(-r400c, 0, radius),
+                rt.spherical_surface.get_on_axis(-r400i, t400c, radius),
+                rt.spherical_surface.get_on_axis(-r400f, t400c + t400f, radius)
+                ],
+                [bk7.n(wavelength_odt), sf2.n(wavelength_odt)])
+
+l4 = rt.system([# AC508-300-A-ML
+                rt.spherical_surface.get_on_axis(r300f, 0, radius),
+                rt.spherical_surface.get_on_axis(r300i, t300f, radius),
+                rt.spherical_surface.get_on_axis(r300c, t300c + t300f, radius)
+                ],
+                [sf2.n(wavelength_odt), bk7.n(wavelength_odt)])
+
+
+
+comb = l1.concatenate(l2, rt.vacuum(), d_100_200)
+
+
+
 surfaces_odt =  \
                [# ACT508-200-A-ML
                 rt.spherical_surface.get_on_axis(r200f, l1s_odt, radius),
@@ -163,20 +197,20 @@ surfaces_odt =  \
                 rt.flat_surface([0, 0, camera_pos], [0, 0, 1], radius)
                 ]
 
-ns_odt = [1,
-          sf2.n(wavelength_odt), bk7.n(wavelength_odt), 1, #ACT508-200-A-ML
-          sf10.n(wavelength_odt), nbaf10.n(wavelength_odt), 1, # AC508-100-A-ML
-          bk7.n(wavelength_odt), sf2.n(wavelength_odt), 1, # AC508-400-A-ML
-          sf2.n(wavelength_odt), bk7.n(wavelength_odt), 1, # AC508-300-A-ML
-          n_oil, # immersion oil
-          n_coverglass, # coverslip
-          n_sample, # sample
-          n_coverglass, # top cover-glass
-          1, # air before detection objective
-          1, # air after detection objective
-          bk7.n(wavelength_odt), sf2.n(wavelength_odt), 1, # ACT08-200-A-ML
-          1 # air before final focal plane
-          ]
+materials = [rt.constant(1),
+             rt.sf2(), rt.bk7(), rt.constant(1), #ACT508-200-A-ML
+             rt.sf10(), rt.nbaf10(), rt.constant(1), # AC508-100-A-ML
+             rt.bk7(), rt.sf2(), rt.constant(1), # AC508-400-A-ML
+             rt.sf2(), rt.bk7(), rt.constant(1), # AC508-300-A-ML
+             rt.constant(n_oil), # immersion oil
+             rt.constant(n_coverglass), # coverslip
+             rt.constant(n_sample), # sample
+             rt.constant(n_coverglass), # top cover-glass
+             rt.constant(1), # air before detection objective
+             rt.constant(1), # air after detection objective
+             rt.bk7(), rt.sf2(), rt.constant(1), # ACT08-200-A-ML
+             rt.constant(1) # air before final focal plane
+             ]
 
 # #######################################
 # ray tracing
@@ -192,7 +226,7 @@ rays = np.concatenate((rt.get_ray_fan([0, 0, 0], max_angle, nrays, wavelength_od
                       axis=0)
 
 
-rays = rt.ray_trace_system(rays, surfaces_odt, ns_odt)
+rays = rt.ray_trace_system(rays, surfaces_odt, materials)
 
 # #######################################
 # plot results
@@ -201,7 +235,3 @@ figh = rt.plot_rays(rays, surfaces_odt, colors=["k"] * nrays + ["b"] * nrays + [
 ax = plt.gca()
 ax.plot([l5s_odt - 1.8, l5s_odt - 1.8], [-10, 10], 'k--')
 plt.suptitle("ODT")
-
-
-
-
