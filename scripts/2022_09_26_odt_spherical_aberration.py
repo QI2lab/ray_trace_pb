@@ -36,14 +36,16 @@ alpha_detection = np.arcsin(na_detection / 1.333)
 n_coverglass = 1.5
 thickness_coverslip = 0.17
 n_oil = 1.5
-thickness_oil = (f_excitation - thickness_coverslip / n_coverglass) * n_oil # f = d1/n1 + d2/n2
+# f = d1/n1 + d2/n2
+thickness_oil = (f_excitation - thickness_coverslip / n_coverglass) * n_oil
 
 n_sample = 1.333
 thickness_sample = 0.1
-# n_top_coverslip = 1.5
-n_top_coverslip = 1.333
+n_top_coverslip = 1.5
+# n_top_coverslip = 1.333
 thickness_top_coverslip = 1.25 # measurement of Alexis' flow cell
 n_water = 1.333
+# f = d1/n1 + d2/n2 + d3/n3
 thickness_water_immersion = (f_detection - thickness_sample / n_sample - thickness_top_coverslip / n_top_coverslip) * n_water
 
 # #############################
@@ -225,8 +227,6 @@ else:
     ls = ls.concatenate(rt.system([rt.flat_surface([0, 0, 0], [0, 0, 1], aperture_radius)], []),  # add camera
                         rt.vacuum(), wd8_right)
 
-#abcd = ls.compute_paraxial_matrix(wavelength, rt.vacuum(), rt.vacuum())
-
 # #######################################
 # ray tracing
 # #######################################
@@ -255,7 +255,8 @@ ax.legend()
 figh.suptitle("ODT optical system", fontsize=16)
 
 
-saving = True
+# zoomed in version for saving
+saving = False
 if saving:
     figh_save, ax = ls.plot(rays,
                             colors=["k"] * nrays + ["b"] * nrays + ["r"] * nrays + ["g"] * nrays,
