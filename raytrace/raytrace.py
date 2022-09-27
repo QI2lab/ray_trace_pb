@@ -794,7 +794,7 @@ class system:
     Collection of surfaces
     """
 
-    def __init__(self, surfaces, materials):
+    def __init__(self, surfaces, materials, names=None, surfaces_by_name=None):
         """
 
         @param surfaces: length n
@@ -805,6 +805,24 @@ class system:
 
         self.surfaces = surfaces
         self.materials = materials
+
+        if names is None:
+            self.names = [""]
+        else:
+            if not isinstance(names, list):
+                names = [names]
+            self.names = names
+
+        # should be able to get name of surfaces ii from self.names[self.surfaces_by_name[ii]]
+        if surfaces_by_name is None:
+            self.surfaces_by_name = np.zeros(len(surfaces), dtype=int)
+        else:
+            if len(surfaces_by_name) != len(surfaces):
+                raise ValueError("len(surfaces_by_name) must equal len(surfaces)")
+
+            self.surfaces_by_name = np.array(surfaces_by_name).astype(int)
+
+        # todo: also need a way to carry names/descriptions of lenses around and show on plot
 
     def reverse(self):
         """
@@ -845,7 +863,9 @@ class system:
 
         s = self.surfaces + new_surfaces
         materials = self.materials + [material] + other.materials
-        return system(s, materials)
+        names = self.names + other.names
+        surfaces_by_name = np.concatenate((self.surfaces_by_name, other.surfaces_by_name + np.max(self.surfaces_by_name) + 1))
+        return system(s, materials, names=names, surfaces_by_name=surfaces_by_name)
 
     def ray_trace(self, rays, input_medium, output_medium):
         """
@@ -937,7 +957,14 @@ class system:
 
         return fp1, fp2, pp1, pp2, efl1, efl2
 
-    def plot(self, ray_array=None, phi: float = 0, colors: list = None, label = None, ax = None, ** kwargs):
+    def plot(self, ray_array=None,
+             phi: float = 0,
+             colors: list = None,
+             label = None,
+             ax = None,
+             show_names=True,
+             fontsize=16,
+             **kwargs):
         """
         Plot rays and optical surfaces
 
@@ -982,15 +1009,103 @@ class system:
                     else:
                         ax.plot(ray_array[:, ii, 2], h_data[:, ii], color=colors[ii])
 
-            ax.set_xlabel("z-position")
-            ax.set_ylabel("height")
+            ax.set_xlabel("z-position (mm)", fontsize=fontsize)
+            ax.set_ylabel("height (mm)", fontsize=fontsize)
+
+        ax.tick_params(axis='x', labelsize=fontsize)
+        ax.tick_params(axis='y', labelsize=fontsize)
 
         # plot surfaces
         if self.surfaces is not None:
-            for s in self.surfaces:
+            for ii, s in enumerate(self.surfaces):
                 s.draw(ax)
+                if show_names:
+                    if ii == 0 or self.surfaces_by_name[ii] != self.surfaces_by_name[ii - 1]:
+
+                        ax.text(s.paraxial_center[2], # x
+                                s.paraxial_center[0] + 1.1 * s.aperture_rad, # y
+                                self.names[self.surfaces_by_name[ii]], # s
+                                horizontalalignment="center",
+                                fontsize=fontsize
+                                )
 
         return figh, ax
+
+
+class doublet(system):
+    def __init__(self,
+                 material_crown=None,
+                 material_flint=None,
+                 radius_crown=None,
+                 radius_flint=None,
+                 radius_interface=None,
+                 thickness_crown=None,
+                 thickness_flint=None,
+                 aperture_radius=25.4,
+                 input_collimated=True,
+                 names=""):
+        """
+        Provide the radii of curvature assuming the lens is oriented with the crown side
+        to the left (i.e. the proper orientation to focus a collimated beam oriented from the left)
+
+        Positive curvature indicates a surface appears convex when looking from the left. Most
+        commonly the crown surface will have a positive radius of curvatures while
+        the intermediate surface and flint surface will have negative radii of curvature
+
+        To create a lens oriented the other way, set input_collimated=True (but define the curvatures and
+        other parameters as described above)
+
+        @param material_crown:
+        @param material_flint:
+        @param radius_crown:
+        @param radius_flint:
+        @param radius_interface:
+        @param thickness_crown:
+        @param thickness_flint:
+        @param aperture_radius:
+        @param input_collimated:
+        """
+
+        if input_collimated:
+            if not np.isinf(radius_crown):
+                s1 = spherical_surface.get_on_axis(radius_crown, 0, aperture_radius)
+            else:
+                s1 = flat_surface([0, 0, 0], [0, 0, 1], aperture_rad=aperture_radius)
+
+            if not np.isinf(radius_interface):
+                s2 = spherical_surface.get_on_axis(radius_interface, thickness_crown, aperture_radius)
+            else:
+                s2 = flat_surface([0, 0, thickness_crown], [0, 0, 1], aperture_rad=aperture_radius)
+
+            if not np.isinf(radius_flint):
+                s3 = spherical_surface.get_on_axis(radius_flint, thickness_crown + thickness_flint, aperture_radius)
+            else:
+                s3 = flat_surface([0, 0, thickness_crown + thickness_flint], [0, 0, 1], aperture_rad=aperture_radius)
+
+            surfaces = [s1, s2, s3]
+            materials = [material_crown, material_flint]
+
+        else:
+            if not np.isinf(radius_flint):
+                s1 = spherical_surface.get_on_axis(-radius_flint, 0, aperture_radius)
+            else:
+                s1 = flat_surface([0, 0, 0], [0, 0, 1], aperture_rad=aperture_radius)
+
+            if not np.isinf(radius_interface):
+                s2 = spherical_surface.get_on_axis(-radius_interface, thickness_flint, aperture_radius)
+            else:
+                s2 = flat_surface([0, 0, thickness_flint], [0, 0, 1], aperture_rad=aperture_radius)
+
+            if not np.isinf(radius_crown):
+                s3 = spherical_surface.get_on_axis(-radius_crown, thickness_flint + thickness_crown, aperture_radius)
+            else:
+                s3 = flat_surface([0, 0, thickness_flint + thickness_crown], [0, 0, 1], aperture_rad=aperture_radius)
+
+            surfaces = [s1, s2, s3]
+            materials = [material_flint, material_crown]
+
+        super().__init__(surfaces, materials, names=names, surfaces_by_name=None)
+
 
 
 # ################################################
