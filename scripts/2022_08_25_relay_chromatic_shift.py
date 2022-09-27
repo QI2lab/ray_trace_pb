@@ -66,14 +66,14 @@ ns1 = [m.n(w1) for m in materials]
 ns2 = [m.n(w2) for m in materials]
 
 # todo: these paraxial calculations still not working
-rt1_w1 = rt.compute_paraxial(surfaces[:3], ns1[:4])
-rt2_w1 = rt.compute_paraxial(surfaces[3:6], ns1[3:7])
+rt1_w1 = rt.compute_paraxial_matrix(surfaces[:3], ns1[:4])
+rt2_w1 = rt.compute_paraxial_matrix(surfaces[3:6], ns1[3:7])
 d1, _ = rt.find_paraxial_collimated_distance(rt1_w1, rt2_w1, 1)
 fs1 = np.array([[1, d1], [1, 0]])
 test = rt2_w1[:2, :2].dot(fs1.dot(rt1_w1[:2, :2]))
 
-rt1_w2 = rt.compute_paraxial(surfaces[:3], ns2[:4])
-rt2_w2 = rt.compute_paraxial(surfaces[3:6], ns2[3:7])
+rt1_w2 = rt.compute_paraxial_matrix(surfaces[:3], ns2[:4])
+rt2_w2 = rt.compute_paraxial_matrix(surfaces[3:6], ns2[3:7])
 d2, _ = rt.find_paraxial_collimated_distance(rt1_w2, rt2_w2, 1)
 
 print(f"Collimated at {w1 * 1e3:.1f}nm for lens distance of {d1:.5f}mm")

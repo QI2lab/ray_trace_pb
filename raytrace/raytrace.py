@@ -39,6 +39,8 @@ def ray_trace_system(rays, surfaces, materials):
      surface of the system, and the last element is the index of refraction after the last surface of the system.
     @return rays_out: M x N x 8 array, where we represent the complete raytracing by M positions of each ray
     """
+    # raise DeprecationWarning("use System() instead")
+
     if len(materials) != len(surfaces) + 1:
         raise ValueError("length of materials should be len(surfaces) + 1")
 
@@ -50,7 +52,7 @@ def ray_trace_system(rays, surfaces, materials):
     return rays
 
 
-def compute_paraxial(surfaces, indices_of_refraction, initial_distance=0, final_distance=0):
+def compute_paraxial_matrix(surfaces, materials, wavelength, initial_distance=0, final_distance=0):
     """
     # todo: instead of indices of refraction use a material ... and derive index of refraction from material + wavelength
     Generate the ray transfer (ABCD) matrix for an optical system
@@ -64,13 +66,15 @@ def compute_paraxial(surfaces, indices_of_refraction, initial_distance=0, final_
     """
     mats = [] # helpful for debugging
 
+    indices_of_refraction = [m.n(wavelength) for m in materials]
+
     # propagate initial distance
     ray_xfer_mat = get_free_space_abcd(initial_distance, n=indices_of_refraction[0])
     mats.append(ray_xfer_mat)
 
     for ii in range(len(surfaces)):
         # apply ray transfer matrix for current surface
-        abcd_temp = surfaces[ii].get_abcd(indices_of_refraction[ii], indices_of_refraction[ii + 1])
+        abcd_temp = surfaces[ii].get_ray_transfer_matrix(indices_of_refraction[ii], indices_of_refraction[ii + 1])
         ray_xfer_mat = abcd_temp.dot(ray_xfer_mat)
         mats.append(abcd_temp)
 
@@ -97,6 +101,7 @@ def get_reversed_system(surfaces, materials):
     :param list n_rev:
     :return surfaces_rev, n_rev:
     """
+    # raise DeprecationWarning("use System() instead")
     surfaces_rev = [copy.deepcopy(surfaces[-ii]) for ii in range(1, len(surfaces) + 1)]
 
     for ii in range(len(surfaces)):
@@ -210,7 +215,7 @@ def auto_focus(surfaces, materials, wavelength, mode="ray-fan"):
 
     elif mode == "paraxial-focused":
         ns = [m.n(wavelength) for m in materials]
-        abcd = compute_paraxial(surfaces, ns, initial_distance=0, final_distance=0)
+        abcd = compute_paraxial_matrix(surfaces, ns, initial_distance=0, final_distance=0)
         # determine what free space propagation matrix we need such that initial ray (0, n*theta) -> (0, n'*theta')
         dx = -abcd[0, 1] / abcd[1, 1] * ns[-1]
         dy = -abcd[2, 3] / abcd[3, 3] * ns[-1]
@@ -221,7 +226,7 @@ def auto_focus(surfaces, materials, wavelength, mode="ray-fan"):
         focus = surfaces[-1].paraxial_center[2] + 0.5 * (dx + dy) * np.sign(surfaces[-1].input_axis[2])
     elif mode == "paraxial-collimated":
         ns = [m.n(wavelength) for m in materials]
-        abcd = compute_paraxial(surfaces, ns, initial_distance=0, final_distance=0)
+        abcd = compute_paraxial_matrix(surfaces, ns, initial_distance=0, final_distance=0)
         # determine what free space propagation matrix we need such that initial ray (h, n*theta) -> (0, n'*theta')
         dx = -abcd[0, 0] / abcd[1, 0] * ns[-1]
         dy = -abcd[2, 2] / abcd[3, 2] * ns[-1]
@@ -241,19 +246,33 @@ def auto_focus(surfaces, materials, wavelength, mode="ray-fan"):
 
 def find_paraxial_focus(abcd_mat, n=1):
     """
-    Find paraxial focus from abcd matrix
+    Find paraxial focus of a paraxial optical system from its ray-tarnsfer matrix
+
     @param abcd_mat:
     @param n: index of refraction of final medium
     @return dx, abcd_mat_x, efl_x, dy, abcd_mat_y, efl_y:
     """
-    dx = -abcd_mat[0, 1] / abcd_mat[1, 1] * n
-    dy = -abcd_mat[2, 3] / abcd_mat[3, 3] * n
+
+    # if I left multiply my ray transfer matrix by free space matrix, then combined matrix has lens/focal form
+    # for certain distance of propagation dx. Find this by setting A + d/n * C = 0
+    dx = -abcd_mat[0, 0] / abcd_mat[1, 0] * n
+    dy = -abcd_mat[2, 2] / abcd_mat[3, 2] * n
 
     abcd_mat_x = get_free_space_abcd(dx, n).dot(abcd_mat)
     abcd_mat_y = get_free_space_abcd(dy, n).dot(abcd_mat)
 
-    efl_x = -1/abcd_mat_x[1, 0]
-    efl_y = -1/abcd_mat_y[3, 2]
+    # can also find the principal plane with the following construction
+    # take income ray at (h1, n1*theta1 = 0). Consider the ray-transfer matrix which combines the optic and the
+    # distance travelled dx to the focus
+    # then extend the corresponding ray at (h2=0, n2*theta2) backwards until it reaches height h
+    # can check this happens at position P2 = f2 + h1/theta2 (where theta2<0 here)
+    # by construction the ray-transfer matrix above has A=0, but in any case we have the relationship C*h1 = n2*theta2
+    # or P2 = f2 + n2/C -> EFL2 = f2 - P2 = -n2/C
+
+    # todo: think it is wrong to call this the EFL
+    # EFL = 1 / C, and this is not affect by right or left-multiplying the ray-transfer matrix by free space propagation
+    efl_x = -n / abcd_mat_x[1, 0]
+    efl_y = -n / abcd_mat_y[3, 2]
 
     return dx, abcd_mat_x, efl_x, dy, abcd_mat_y, efl_y
 
@@ -310,7 +329,7 @@ def find_cardinal_points(surfaces, materials, wavelength):
 def find_paraxial_collimated_distance(mat1, mat2, n):
     """
     Given two sets of surfaces (e.g. two lenses) determine the distance which should be inserted between them
-    to give a system which converts collimated rays to colliamted rays
+    to give a system which converts collimated rays to collimated rays
 
     @param mat1:
     @param mat2:
@@ -514,10 +533,6 @@ def get_collimated_rays(pt, displacement_max, n_disps, wavelengths,
     # construct rays
     rays = np.zeros((n_disps * nphis, 8))
     # position = d * (n1 * cos(theta) + n2 * sin(theta))
-    # n1*cos(phi) + n2*sin(phi) is unit vector pointing to ray origin
-    # rays[:, 0] = pt[0] + np.cos(pps) * oos
-    # rays[:, 1] = pt[1] + np.sin(pps) * oos
-    # rays[:, 2] = pt[2]
     rays[:, 0:3] = np.expand_dims(pt, axis=0) + \
                    np.expand_dims(n1, axis=0) * np.expand_dims(oos * np.cos(pps), axis=1) + \
                    np.expand_dims(n2, axis=0) * np.expand_dims(oos * np.sin(pps), axis=1)
@@ -526,8 +541,6 @@ def get_collimated_rays(pt, displacement_max, n_disps, wavelengths,
     rays[:, 4] = normal[1]
     rays[:, 5] = normal[2]
     # assume phase is the same on plane perpendicular to the normal
-    # todo: is this correct?
-    # rays[:, 6] = np.sum(rays[:, 0:3] * rays[:, 3:6], axis=1)
     rays[:, 6] = 0
     # wavelength
     rays[:, 7] = wavelengths
@@ -715,6 +728,7 @@ def plot_rays(ray_array, surfaces: list = None, phi: float = 0, colors: list = N
     @param kwargs: passed through to figure, if it does not already exist
     @return fig_handle, axis:
     """
+    raise DeprecationWarning("Use System() instead")
 
     if ax is None:
         figh = plt.figure(**kwargs)
@@ -780,7 +794,7 @@ class system:
     Collection of surfaces
     """
 
-    def __init__(self, surfaces, materials):
+    def __init__(self, surfaces, materials, names=None, surfaces_by_name=None):
         """
 
         @param surfaces: length n
@@ -792,7 +806,29 @@ class system:
         self.surfaces = surfaces
         self.materials = materials
 
+        if names is None:
+            self.names = [""]
+        else:
+            if not isinstance(names, list):
+                names = [names]
+            self.names = names
+
+        # should be able to get name of surfaces ii from self.names[self.surfaces_by_name[ii]]
+        if surfaces_by_name is None:
+            self.surfaces_by_name = np.zeros(len(surfaces), dtype=int)
+        else:
+            if len(surfaces_by_name) != len(surfaces):
+                raise ValueError("len(surfaces_by_name) must equal len(surfaces)")
+
+            self.surfaces_by_name = np.array(surfaces_by_name).astype(int)
+
+        # todo: also need a way to carry names/descriptions of lenses around and show on plot
+
     def reverse(self):
+        """
+        flip direction of the optic we are considering (so typically rays now enter from the right)
+        @return:
+        """
         surfaces_rev = [copy.deepcopy(self.surfaces[-ii]) for ii in range(1, len(self.surfaces) + 1)]
 
         for ii in range(len(self.surfaces)):
@@ -804,8 +840,15 @@ class system:
         return system(surfaces_rev, materials_rev)
 
     def concatenate(self, other, material, distance=0, axis=(0, 0, 1)):
-        # todo: need to figure out how best to specify distance in between ...
-        # e.g. is it distance between first and last surfaces? Or distance between principle planes?
+        """
+        add another optic after this one
+        @param other:
+        @param material:
+        @param distance:
+        @param axis:
+        @return:
+        """
+        # specify distance between surfaces as distances between the paraxial foci
 
         new_surfaces = [copy.deepcopy(s) for s in other.surfaces]
         for ii, s in enumerate(new_surfaces):
@@ -820,10 +863,249 @@ class system:
 
         s = self.surfaces + new_surfaces
         materials = self.materials + [material] + other.materials
-        return system(s, materials)
+        names = self.names + other.names
+        surfaces_by_name = np.concatenate((self.surfaces_by_name, other.surfaces_by_name + np.max(self.surfaces_by_name) + 1))
+        return system(s, materials, names=names, surfaces_by_name=surfaces_by_name)
 
-    def ray_trace(self, rays, input_medium, output_medium, output_surface):
-        pass
+    def ray_trace(self, rays, input_medium, output_medium):
+        """
+        ray trace through optical system
+        @param rays:
+        @param input_medium:
+        @param output_medium:
+        @return:
+        """
+        materials = [input_medium] + self.materials + [output_medium]
+
+        if len(materials) != len(self.surfaces) + 1:
+            raise ValueError("length of materials should be len(surfaces) + 1")
+
+        rays = np.array(rays)
+
+        for ii in range(len(self.surfaces)):
+            rays = self.surfaces[ii].propagate(rays, materials[ii], materials[ii + 1])
+
+        return rays
+
+    def compute_paraxial_matrix(self, wavelength, initial_material, final_material):
+        """
+        # todo: instead of indices of refraction use a material ... and derive index of refraction from material + wavelength
+        Generate the ray transfer (ABCD) matrix for an optical system
+
+        Assume that the optical system starts at the provided initial distance before the first surface
+
+        @param initial_distance: distance from the ray launching surface to the first surface in the optical system
+        @param surfaces: list of surfaces in the optical system
+        @param indices_of_refraction: indices of refraction between surfaces
+        @return abcd_mat:
+        """
+        mats = []  # helpful for debugging
+
+        surfaces = self.surfaces
+        materials = [initial_material] + self.materials + [final_material]
+
+        indices_of_refraction = [m.n(wavelength) for m in materials]
+
+        # propagate initial distance
+        ray_xfer_mat = get_free_space_abcd(0, n=indices_of_refraction[0])
+        mats.append(ray_xfer_mat)
+
+        for ii in range(len(surfaces)):
+            # apply ray transfer matrix for current surface
+            abcd_temp = surfaces[ii].get_ray_transfer_matrix(indices_of_refraction[ii], indices_of_refraction[ii + 1])
+            ray_xfer_mat = abcd_temp.dot(ray_xfer_mat)
+            mats.append(abcd_temp)
+
+            # apply ray transfer matrix propagating between surfaces
+            if ii < (len(surfaces) - 1):
+                dist = np.linalg.norm(surfaces[ii].paraxial_center - surfaces[ii + 1].paraxial_center)
+                abcd_prop = get_free_space_abcd(dist, n=indices_of_refraction[ii + 1])
+                ray_xfer_mat = abcd_prop.dot(ray_xfer_mat)
+                mats.append(abcd_prop)
+
+        return ray_xfer_mat
+    def get_cardinal_points(self, wavelength, initial_material, final_material):
+        """
+
+        @param wavelength:
+        @param initial_material:
+        @param final_material:
+        @return fp1, fp2, pp1, pp2, efl1, efl2:
+        """
+        # todo: add nodal planes
+
+        # find focal point to the right of the lens
+        ray_xfer = self.compute_paraxial_matrix(wavelength, initial_material, final_material)
+        d2x, _, efl2_x, d2y, _, efl2_y = find_paraxial_focus(ray_xfer, final_material.n(wavelength))
+        d2 = 0.5 * (d2x + d2y)
+        efl2 = 0.5 * (efl2_x + efl2_y)
+
+        fp2 = self.surfaces[-1].paraxial_center + d2 * self.surfaces[-1].output_axis
+
+        # find principal plane to the right
+        pp2 = fp2 - efl2 * self.surfaces[-1].output_axis
+
+        # find focal point to the left of the lens
+        ray_xfer_inv = self.reverse().compute_paraxial_matrix(wavelength, final_material, initial_material)
+        d1x, _, efl1_x, d1y, _, efl1_y = find_paraxial_focus(ray_xfer_inv, initial_material.n(wavelength))
+        d1 = 0.5 * (d1x + d1y)
+        efl1 = 0.5 * (efl1_x + efl1_y)
+        fp1 = self.surfaces[0].paraxial_center - d1 * self.surfaces[0].input_axis
+
+        # find principal plane to the left of the lens
+        pp1 = fp1 + efl1 * self.surfaces[0].input_axis
+
+        return fp1, fp2, pp1, pp2, efl1, efl2
+
+    def plot(self, ray_array=None,
+             phi: float = 0,
+             colors: list = None,
+             label = None,
+             ax = None,
+             show_names=True,
+             fontsize=16,
+             **kwargs):
+        """
+        Plot rays and optical surfaces
+
+        @param ray_array: nsurfaces X nrays x 8
+        @param surfaces: list of surfaces
+        @param phi: angle describing the azimuthal plane to plot. phi = 0 gives the meridional/tangential plane while
+        phi = pi/2 gives the sagittal plane. # todo: not implemented for drawing the surface projections
+        @param colors: list of colors to plot rays
+        @param ax: axis to plot results on. If None, a new figure will be generated
+        @param kwargs: passed through to figure, if it does not already exist
+        @return fig_handle, axis:
+        """
+        # get axis to plot on
+        if ax is None:
+            figh = plt.figure(**kwargs)
+            ax = plt.subplot(1, 1, 1)
+        else:
+            figh = ax.get_figure()
+
+        # plot rays
+        if ray_array is not None:
+            # ray height in the desired azimuthal plane
+            h_data = ray_array[:, :, 0] * np.cos(phi) + ray_array[:, :, 1] * np.sin(phi)
+
+            if label is None:
+                label = ""
+
+            if colors is None:
+                ax.plot(ray_array[:, :, 2], h_data, label=label)
+            else:
+                # ensure color argument is ok
+                if len(colors) == 1 and not isinstance(colors, list):
+                    colors = [colors] * ray_array.shape[1]
+
+                if len(colors) != ray_array.shape[1]:
+                    raise ValueError("len(colors) must equal ray_array.shape[1]")
+
+                # plot each ray a different color
+                for ii in range(ray_array.shape[1]):
+                    if ii == 0:
+                        ax.plot(ray_array[:, ii, 2], h_data[:, ii], color=colors[ii], label=label)
+                    else:
+                        ax.plot(ray_array[:, ii, 2], h_data[:, ii], color=colors[ii])
+
+            ax.set_xlabel("z-position (mm)", fontsize=fontsize)
+            ax.set_ylabel("height (mm)", fontsize=fontsize)
+
+        ax.tick_params(axis='x', labelsize=fontsize)
+        ax.tick_params(axis='y', labelsize=fontsize)
+
+        # plot surfaces
+        if self.surfaces is not None:
+            for ii, s in enumerate(self.surfaces):
+                s.draw(ax)
+                if show_names:
+                    if ii == 0 or self.surfaces_by_name[ii] != self.surfaces_by_name[ii - 1]:
+
+                        ax.text(s.paraxial_center[2], # x
+                                s.paraxial_center[0] + 1.1 * s.aperture_rad, # y
+                                self.names[self.surfaces_by_name[ii]], # s
+                                horizontalalignment="center",
+                                fontsize=fontsize
+                                )
+
+        return figh, ax
+
+
+class doublet(system):
+    def __init__(self,
+                 material_crown=None,
+                 material_flint=None,
+                 radius_crown=None,
+                 radius_flint=None,
+                 radius_interface=None,
+                 thickness_crown=None,
+                 thickness_flint=None,
+                 aperture_radius=25.4,
+                 input_collimated=True,
+                 names=""):
+        """
+        Provide the radii of curvature assuming the lens is oriented with the crown side
+        to the left (i.e. the proper orientation to focus a collimated beam oriented from the left)
+
+        Positive curvature indicates a surface appears convex when looking from the left. Most
+        commonly the crown surface will have a positive radius of curvatures while
+        the intermediate surface and flint surface will have negative radii of curvature
+
+        To create a lens oriented the other way, set input_collimated=True (but define the curvatures and
+        other parameters as described above)
+
+        @param material_crown:
+        @param material_flint:
+        @param radius_crown:
+        @param radius_flint:
+        @param radius_interface:
+        @param thickness_crown:
+        @param thickness_flint:
+        @param aperture_radius:
+        @param input_collimated:
+        """
+
+        if input_collimated:
+            if not np.isinf(radius_crown):
+                s1 = spherical_surface.get_on_axis(radius_crown, 0, aperture_radius)
+            else:
+                s1 = flat_surface([0, 0, 0], [0, 0, 1], aperture_rad=aperture_radius)
+
+            if not np.isinf(radius_interface):
+                s2 = spherical_surface.get_on_axis(radius_interface, thickness_crown, aperture_radius)
+            else:
+                s2 = flat_surface([0, 0, thickness_crown], [0, 0, 1], aperture_rad=aperture_radius)
+
+            if not np.isinf(radius_flint):
+                s3 = spherical_surface.get_on_axis(radius_flint, thickness_crown + thickness_flint, aperture_radius)
+            else:
+                s3 = flat_surface([0, 0, thickness_crown + thickness_flint], [0, 0, 1], aperture_rad=aperture_radius)
+
+            surfaces = [s1, s2, s3]
+            materials = [material_crown, material_flint]
+
+        else:
+            if not np.isinf(radius_flint):
+                s1 = spherical_surface.get_on_axis(-radius_flint, 0, aperture_radius)
+            else:
+                s1 = flat_surface([0, 0, 0], [0, 0, 1], aperture_rad=aperture_radius)
+
+            if not np.isinf(radius_interface):
+                s2 = spherical_surface.get_on_axis(-radius_interface, thickness_flint, aperture_radius)
+            else:
+                s2 = flat_surface([0, 0, thickness_flint], [0, 0, 1], aperture_rad=aperture_radius)
+
+            if not np.isinf(radius_crown):
+                s3 = spherical_surface.get_on_axis(-radius_crown, thickness_flint + thickness_crown, aperture_radius)
+            else:
+                s3 = flat_surface([0, 0, thickness_flint + thickness_crown], [0, 0, 1], aperture_rad=aperture_radius)
+
+            surfaces = [s1, s2, s3]
+            materials = [material_flint, material_crown]
+
+        super().__init__(surfaces, materials, names=names, surfaces_by_name=None)
+
 
 
 # ################################################
@@ -839,19 +1121,19 @@ class surface:
         # n1_in, n2_in, n3_in are mutually orthogonal input unit vectors (think x, y, z).
         # n3_in is the input optical axis.
         # n1_in and n2_in are the x-like and y-like axes and the ABCD matrices are defined according to them
-        self.input_axis = np.array(input_axis).squeeze()
+        self.input_axis = np.array(input_axis).squeeze().astype(float)
 
         # output axes, defined similar to n1_in, n2_in, n3_in
         # for input vectors infinitesimally away from the axis along n1_in, they will exit
         # displaced from the output optical axis along n1_out
         # this is mainly so ray-transfer matrices make sense for mirrors
-        self.output_axis = np.array(output_axis).squeeze()
+        self.output_axis = np.array(output_axis).squeeze().astype(float)
 
         # center
-        self.center = np.array(center).squeeze()
+        self.center = np.array(center).squeeze().astype(float)
 
         # paraxial center
-        self.paraxial_center = np.array(paraxial_center).squeeze()
+        self.paraxial_center = np.array(paraxial_center).squeeze().astype(float)
 
         # aperture information
         self.aperture_rad = aperture_rad
@@ -872,12 +1154,19 @@ class surface:
         pass
 
     def propagate(self, ray_array, material1, material2):
+        """
+        propagate rays throug the surface
+        @param ray_array:
+        @param material1:
+        @param material2:
+        @return:
+        """
         pass
 
     def get_seidel_third_order_fns(self):
         raise NotImplementedError()
 
-    def get_abcd(self, n1, n2):
+    def get_ray_transfer_matrix(self, n1, n2):
         pass
 
     def solve_img_eqn(self, s, n1, n2):
@@ -886,12 +1175,14 @@ class surface:
 
         s and s' use the same convention, where they are negative if to the "left" of the optic and positive
         to the right.
+
+        todo: helper function for calculating seidel aberrations (not finished)
         @param s:
         @param n1:
         @param n2:
         @return:
         """
-        mat = self.get_abcd(n1, n2)
+        mat = self.get_ray_transfer_matrix(n1, n2)
         # idea: form full ABCD matrix as free prop in n2 * mat * free prop in n1, then set B = 0
         with np.errstate(divide="ignore"):
             if not np.isinf(s):
@@ -982,7 +1273,6 @@ class reflecting_surface(surface):
 
 
 class flat_surface(refracting_surface):
-    # todo: can this be replaced by spherical_surface() with R=np.inf?
     """
     Surface is defined by
         [(x, y, z) - (cx, cy, cz)] \cdot normal = 0
@@ -1022,7 +1312,7 @@ class flat_surface(refracting_surface):
         return on_surface
 
 
-    def get_abcd(self, n1=None, n2=None):
+    def get_ray_transfer_matrix(self, n1=None, n2=None):
         mat = np.array([[1, 0, 0, 0, 0],
                         [0, 1, 0, 0, 0],
                         [0, 0, 1, 0, 0],
@@ -1077,11 +1367,11 @@ class flat_surface(refracting_surface):
 
 class plane_mirror(reflecting_surface):
     """
-        Surface is defined by
-            [(x, y, z) - (cx, cy, cz)] \cdot normal = 0
+    Surface is defined by
+        [(x, y, z) - (cx, cy, cz)] \cdot normal = 0
 
-        Where the normal should point along the intended direction of ray-travel
-        """
+    Where the normal should point along the intended direction of ray-travel
+    """
 
     def __init__(self, center, normal, aperture_rad, is_aperture_stop=False):
         self.normal = np.array(normal).squeeze()
@@ -1114,7 +1404,7 @@ class plane_mirror(reflecting_surface):
 
         return on_surface
 
-    def get_abcd(self, n1, n2):
+    def get_ray_transfer_matrix(self, n1, n2):
         mat = np.array([[1, 0, 0, 0],
                         [0, -1, 0, 0],
                         [0, 0, 1, 0],
@@ -1248,7 +1538,7 @@ class spherical_surface(refracting_surface):
 
         return coeffs
 
-    def get_abcd(self, n1, n2):
+    def get_ray_transfer_matrix(self, n1, n2):
         # test if we are going from "inside the sphere" to "outside the sphere" i.e. ray is striking the concave side
         # or the other way
         pc_to_c = self.center - self.paraxial_center
@@ -1503,6 +1793,14 @@ class perfect_lens(refracting_surface):
 
         return rays_out
 
+
+    def get_ray_transfer_matrix(self, n1, n2):
+        mat = np.array([[1,    0, 0,    0, 0],
+                        [-1/self.focal_len, 1, 0,    0, 0],
+                        [0,    0, 1,    0, 0],
+                        [0,    0, -1/self.focal_len, 1, 0],
+                        [0,    0, 0,    0, 1]])
+        return mat
 
     def draw(self, ax):
         # take Y = 0 portion of surface

@@ -1,236 +1,267 @@
 """
-Simulate full SIM/ODT optical setup
+Simulate full ODT optical setup, including extra coverglass to simulate flow cell
+
+sample region consists of (1) layer of oil; (2) no. 1.5 coverslip (3) sample (water) (4) top coverglass (5) water immersion for detection objective
 """
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import numpy as np
 import raytrace.raytrace as rt
-
-wavelength_odt = 0.785
-max_height = 25
-radius = 25
+from pathlib import Path
+import datetime
 
 # #############################
-# define lenses and materials used in setup
+# define phsyical parameters used in setup
 # #############################
-# below c = crown, f = flint, i = intermediate
-# radii of curvature are given as if the flint side is first side. If reversed, need to take negatives
-# crown side towards infinity space, i.e. is more curved. And BFL is measured from flint side
-# (so BFL really defined opposite of the convention I'm using below but ...)
-bk7 = rt.bk7()
-sf2 = rt.sf2()
-sf10 = rt.sf10()
-nbaf10 = rt.nbaf10()
 
-# ACT508-200-A-ML
-t200c = 10.6
-t200f = 6
-r200f = 409.4
-r200i = 92.1
-r200c = -106.2
-bfl200 = 190.6
-efl200 = 200
-# AC508-200-A-ML
-t200c_old = 8.5
-t200f_old = 2
-r200f_old = 376.3
-r200i_old = 93.1
-r200c_old = -109.9
-bfl200_old = 193.7
-efl200_old = 200
-# AC508-100-A-ML
-t100c = 16
-t100f = 4
-r100f = 363.1
-r100i = 44.2
-r100c = -71.1
-bfl100 = 89
-efl100 = 100
-# AC508-400-A-ML
-t400c = 8
-t400f = 8
-r400f = 398.5
-r400i = 148.9
-r400c = -292.3
-bfl400 = 396.1
-efl400 = 400
-# AC508-300-A-ML
-t300c = 6.0
-t300f = 2.0
-r300f = 580.8
-r300i = 134
-r300c = -161.5
-bfl300 = 295.4
-efl300 = 300
+include_relay = False
+
+wavelength = 0.785
+dmd_tilt_angle = 20 * np.pi/180
+aperture_radius = 25.4
+
 # olympus 100x NA=1.3 oil-immersion objective (perfect lens)
-f_excitation = 1.8
+f_excitation = 180 / 100
 na_excitation = 1.3
 fov_excitation = 0.130
+alpha_excitation = np.arcsin(na_excitation / 1.5)
+
 # olympus 60x NA=1.0 water-immersion objective (perfect lens) (formerly mitutoyo 50x NA 0.55)
-f_detection = 4
-na_detection = 0.55
+f_detection = 180. / 60.
+na_detection = 1.
+alpha_detection = np.arcsin(na_detection / 1.333)
 
-# #############################
-# distances for all imaging systems
-# #############################
-d_dmd_lens = bfl200
-d_400_300 = bfl400 + bfl300 + 5
-d_300_obj = 300 + 1.8
-
-# only used for SIM imaging
-d_200_400 = 200 + 400
-
-# only used for DMD in BFP
-d_100_200 = 200 + bfl100
-d_100_400 = 100 + 400 - 6
-
-# #############################
-# Imaging system for ODT = DMD in BFP
-# #############################
-l23_shift = 0
-
-l1s_odt = d_dmd_lens
-l1e_odt = l1s_odt + t200c + t200f
-
-l2s_odt = l1e_odt + d_100_200 + l23_shift
-l2e_odt = l2s_odt + t100c + t100f
-
-l3s_odt = l2e_odt + d_100_400
-l3e_odt = l3s_odt + t400c + t400f
-
-l4s_odt = l3e_odt + d_400_300 - l23_shift
-l4e_odt = l4s_odt + t300c + t300f
-
-l5s_odt = l4e_odt + d_300_obj
-l5e_odt = l5s_odt
-
-n_oil = 1.5
-thickness_coverslip = 0.13
+# sample region
 n_coverglass = 1.5
-
-focal_plane = l5e_odt + n_oil * f_excitation
+thickness_coverslip = 0.17
+n_oil = 1.5
+thickness_oil = (f_excitation - thickness_coverslip / n_coverglass) * n_oil # f = d1/n1 + d2/n2
 
 n_sample = 1.333
-water_thickness = 1
+thickness_sample = 0.1
+# n_top_coverslip = 1.5
+n_top_coverslip = 1.333
+thickness_top_coverslip = 1.25 # measurement of Alexis' flow cell
+n_water = 1.333
+thickness_water_immersion = (f_detection - thickness_sample / n_sample - thickness_top_coverslip / n_top_coverslip) * n_water
 
-thickness_top_coverslip = 1
+# #############################
+# define lenses
+# #############################
 
-water_focal_shift = 0.1275 * 2
-l6s_odt = l5e_odt + 1.5 * 1.8 + 4 + water_focal_shift # for 1.5mm water
-l6e_odt = l6s_odt
+l1 = rt.doublet(names="ACT508-200-A-ML",
+                material_crown=rt.bk7(),
+                material_flint=rt.sf2(),
+                radius_crown=106.2,
+                radius_flint=-409.4,
+                radius_interface=-92.1,
+                thickness_crown=10.6,
+                thickness_flint=6.,
+                aperture_radius=aperture_radius,
+                input_collimated=False)
 
-# keep position fixed regardless of water focal shift
-l7s_odt = l6s_odt + (f_detection + efl200_old - water_focal_shift)
-l7s_odt = l7s_odt + t200c + t200f
-
-camera_pos = l7s_odt + bfl200_old + 11.2
-
-l1 = rt.system([# ACT508-200-A-ML
-                rt.spherical_surface.get_on_axis(r200f, 0, radius),
-                rt.spherical_surface.get_on_axis(r200i, t200f, radius),
-                rt.spherical_surface.get_on_axis(r200c, t200c + t200f, radius)
-                ],
-                [sf2.n(wavelength_odt), bk7.n(wavelength_odt)]
+l2 = rt.doublet(names="AC508-100-A-ML",
+                material_crown=rt.nbaf10(),
+                material_flint=rt.sf10(),
+                radius_crown=71.1,
+                radius_flint=-363.1,
+                radius_interface=-44.2,
+                thickness_crown=16,
+                thickness_flint=4,
+                aperture_radius=aperture_radius,
+                input_collimated=False
                 )
 
-l2 = rt.system([# AC508-100-A-ML, seems like should have put other way in system?
-                rt.spherical_surface.get_on_axis(r100f, 0, radius),
-                rt.spherical_surface.get_on_axis(r100i, t100f, radius),
-                rt.spherical_surface.get_on_axis(r100c, t100c + t100f, radius)],
-                [sf10.n(wavelength_odt), nbaf10.n(wavelength_odt)])
+l3 = rt.doublet(names="AC508-400-A-ML",
+                material_crown=rt.bk7(),
+                material_flint=rt.sf2(),
+                radius_crown=292.3,
+                radius_flint=-398.5,
+                radius_interface=-148.9,
+                thickness_crown=8.,
+                thickness_flint=8.,
+                aperture_radius=aperture_radius,
+                input_collimated=True
+                )
 
-l3 = rt.system([# AC508-400-A-ML
-                rt.spherical_surface.get_on_axis(-r400c, 0, radius),
-                rt.spherical_surface.get_on_axis(-r400i, t400c, radius),
-                rt.spherical_surface.get_on_axis(-r400f, t400c + t400f, radius)
-                ],
-                [bk7.n(wavelength_odt), sf2.n(wavelength_odt)])
+l4 = rt.doublet(names="AC508-300-A-ML",
+                material_crown=rt.bk7(),
+                material_flint=rt.sf2(),
+                radius_crown=161.5,
+                radius_flint=-580.8,
+                radius_interface=-134,
+                thickness_crown=6.0,
+                thickness_flint=2.0,
+                aperture_radius=aperture_radius,
+                input_collimated=False
+                )
 
-l4 = rt.system([# AC508-300-A-ML
-                rt.spherical_surface.get_on_axis(r300f, 0, radius),
-                rt.spherical_surface.get_on_axis(r300i, t300f, radius),
-                rt.spherical_surface.get_on_axis(r300c, t300c + t300f, radius)
-                ],
-                [sf2.n(wavelength_odt), bk7.n(wavelength_odt)])
+obj1 = rt.system([rt.perfect_lens(f_excitation, [0, 0, 0], [0, 0, 1], alpha_excitation)],
+                 [],
+                 #names="obj1"
+                 )
+
+sample = rt.system([# oil
+                    rt.flat_surface([0, 0, 0], [0, 0, 1], aperture_radius),
+                    # coverslip (assume focal plane right at coverslip)
+                    rt.flat_surface([0, 0, thickness_coverslip], [0, 0, 1], fov_excitation),
+                    # water/sample
+                    rt.flat_surface([0, 0, thickness_coverslip + thickness_sample], [0, 0, 1], aperture_radius),
+                    # top cover-glass
+                    rt.flat_surface([0, 0, thickness_coverslip + thickness_sample + thickness_top_coverslip], [0, 0, 1], aperture_radius)
+                    ],
+                    [rt.constant(n_coverglass), # coverslip
+                    rt.constant(n_sample), # sample
+                    rt.constant(n_top_coverslip)],
+                    names="sample")
+
+obj2 = rt.system([rt.perfect_lens(f_detection, [0, 0, 0], [0, 0, 1], alpha_detection)],
+                 [],
+                 #names="obj2"
+                 )
+
+# l8 = rt.doublet(name="AC508-200-A-ML",
+#                 material_crown=rt.bk7(),
+#                 material_flint=rt.sf2(),
+#                 radius_crown=109.9,
+#                 radius_flint=-376.3,
+#                 radius_interface=-93.1,
+#                 thickness_crown=8.5,
+#                 thickness_flint=2.0,
+#                 aperture_radius=aperture_radius,
+#                 input_collimated=True
+#                 )
+
+l8 = rt.doublet(names="AC508-180-AB-ML",
+                material_crown=rt.nlak22(),
+                material_flint=rt.nsf6(),
+                radius_crown=144.4,
+                radius_flint=-328.2,
+                radius_interface=-115.4,
+                thickness_crown=9.5,
+                thickness_flint=4.0,
+                aperture_radius=aperture_radius,
+                input_collimated=True
+                )
+
+l9 = rt.doublet(names="AC508-100-B-ML",
+                material_crown=rt.nlak22(),
+                material_flint=rt.nsf6ht(),
+                radius_crown=65.8,
+                radius_flint=-280.6,
+                radius_interface=-56.0,
+                thickness_crown=13.0,
+                thickness_flint=2.0,
+                aperture_radius=aperture_radius,
+                input_collimated=False
+                )
+
+l10 = rt.doublet(names="AC508-300-AB-ML",
+                 material_crown=rt.nlak22(),
+                 material_flint=rt.nsf6(),
+                 radius_crown=167.7,
+                 radius_flint=np.inf,
+                 radius_interface=-285.8,
+                 thickness_crown=9.0,
+                 thickness_flint=4.0,
+                 aperture_radius=aperture_radius,
+                 input_collimated=True
+                 )
 
 
+# compute working distances and other paraxial info about lenses
+fp1_a, fp1_b, _, _, efl1, _ = l1.get_cardinal_points(wavelength, rt.vacuum(), rt.vacuum())
+wd1_left = (l1.surfaces[0].paraxial_center - fp1_a)[2]
+wd1_right = (fp1_b - l1.surfaces[-1].paraxial_center)[2]
 
-comb = l1.concatenate(l2, rt.vacuum(), d_100_200)
+fp2_a, fp2_b, _, _, efl2, _ = l2.get_cardinal_points(wavelength, rt.vacuum(), rt.vacuum())
+wd2_left = (l2.surfaces[0].paraxial_center - fp2_a)[2]
+wd2_right = (fp2_b - l2.surfaces[-1].paraxial_center)[2]
 
+fp3_a, fp3_b, _, _, efl3, _ = l3.get_cardinal_points(wavelength, rt.vacuum(), rt.vacuum())
+wd3_left = (l3.surfaces[0].paraxial_center - fp3_a)[2]
+wd3_right = (fp3_b - l3.surfaces[-1].paraxial_center)[2]
 
+fp4_a, fp4_b, _, _, efl4, _ = l4.get_cardinal_points(wavelength, rt.vacuum(), rt.vacuum())
+wd4_left = (l4.surfaces[0].paraxial_center - fp4_a)[2]
+wd4_right = (fp4_b - l4.surfaces[-1].paraxial_center)[2]
 
-surfaces_odt =  \
-               [# ACT508-200-A-ML
-                rt.spherical_surface.get_on_axis(r200f, l1s_odt, radius),
-                rt.spherical_surface.get_on_axis(r200i, l1s_odt + t200f, radius),
-                rt.spherical_surface.get_on_axis(r200c, l1s_odt + t200c + t200f, radius),
-                # AC508-100-A-ML, seems like should have put other way in system?
-                rt.spherical_surface.get_on_axis(r100f, l2s_odt, radius),
-                rt.spherical_surface.get_on_axis(r100i, l2s_odt + t100f, radius),
-                rt.spherical_surface.get_on_axis(r100c, l2s_odt + t100c + t100f, radius),
-                # AC508-400-A-ML
-                rt.spherical_surface.get_on_axis(-r400c, l3s_odt, radius),
-                rt.spherical_surface.get_on_axis(-r400i, l3s_odt + t400c, radius),
-                rt.spherical_surface.get_on_axis(-r400f, l3s_odt + t400c + t400f, radius),
-                # AC508-300-A-ML
-                rt.spherical_surface.get_on_axis(r300f, l4s_odt, radius),
-                rt.spherical_surface.get_on_axis(r300i, l4s_odt + t300f, radius),
-                rt.spherical_surface.get_on_axis(r300c, l4s_odt + t300c + t300f, radius),
-                # excitation objective
-                rt.perfect_lens(f_excitation, [0, 0, l5s_odt], [0, 0, 1], f_excitation * na_excitation),
-                # oil
-                rt.flat_surface([0, 0, focal_plane - thickness_coverslip], [0, 0, 1], radius),
-                # coverslip (assume focal plane right at coverslip)
-                rt.flat_surface([0, 0, focal_plane], [0, 0, 1], fov_excitation),
-                # water/sample
-                rt.flat_surface([0, 0, focal_plane + water_thickness], [0, 0, 1], radius),
-                # top cover-glass
-                rt.flat_surface([0, 0, focal_plane + water_thickness + thickness_top_coverslip], [0, 0, 1], radius),
-                # detection objective
-                rt.perfect_lens(f_detection, [0, 0, l6s_odt], [0, 0, 1], f_detection * na_detection),
-                # ACT08-200-A-ML
-                rt.spherical_surface.get_on_axis(-r200c_old, l7s_odt, radius),
-                rt.spherical_surface.get_on_axis(-r200i_old, l7s_odt + t200c_old, radius),
-                rt.spherical_surface.get_on_axis(-r200f_old, l7s_odt + t200c_old + t200f_old, radius),
-                # final focal plane
-                rt.flat_surface([0, 0, camera_pos], [0, 0, 1], radius)
-                ]
+fp5_a, fp5_b, _, _, efl5, _ = obj1.get_cardinal_points(wavelength, rt.vacuum(), rt.vacuum())
+wd5_left = (obj1.surfaces[0].paraxial_center - fp5_a)[2]
+# wd5_right = (fp5_b - obj1.surfaces[-1].paraxial_center)[2]
 
-materials = [rt.constant(1),
-             rt.sf2(), rt.bk7(), rt.constant(1), #ACT508-200-A-ML
-             rt.sf10(), rt.nbaf10(), rt.constant(1), # AC508-100-A-ML
-             rt.bk7(), rt.sf2(), rt.constant(1), # AC508-400-A-ML
-             rt.sf2(), rt.bk7(), rt.constant(1), # AC508-300-A-ML
-             rt.constant(n_oil), # immersion oil
-             rt.constant(n_coverglass), # coverslip
-             rt.constant(n_sample), # sample
-             rt.constant(n_coverglass), # top cover-glass
-             rt.constant(1), # air before detection objective
-             rt.constant(1), # air after detection objective
-             rt.bk7(), rt.sf2(), rt.constant(1), # ACT08-200-A-ML
-             rt.constant(1) # air before final focal plane
-             ]
+fp7_a, fp7_b, _, _, efl7, _ = obj2.get_cardinal_points(wavelength, rt.vacuum(), rt.vacuum())
+# wd7_left = (obj2.surfaces[0].paraxial_center - fp7_a)[2]
+wd7_right = (fp7_b - obj2.surfaces[-1].paraxial_center)[2]
+
+fp8_a, fp8_b, _, _, efl8, _ = l8.get_cardinal_points(wavelength, rt.vacuum(), rt.vacuum())
+wd8_left = (l8.surfaces[0].paraxial_center - fp8_a)[2]
+wd8_right = (fp8_b - l8.surfaces[-1].paraxial_center)[2]
+
+fp9_a, fp9_b, _, _, efl9, _ = l9.get_cardinal_points(wavelength, rt.vacuum(), rt.vacuum())
+wd9_left = (l9.surfaces[0].paraxial_center - fp9_a)[2]
+wd9_right = (fp9_b - l9.surfaces[-1].paraxial_center)[2]
+
+fp10_a, fp10_b, _, _, efl10, _ = l10.get_cardinal_points(wavelength, rt.vacuum(), rt.vacuum())
+wd10_left = (l10.surfaces[0].paraxial_center - fp10_a)[2]
+wd10_right = (fp10_b - l10.surfaces[-1].paraxial_center)[2]
+
+# create optical system using paraxial working distances to set spacing between lenses
+ls = l1.concatenate(l2, rt.vacuum(), wd1_right + wd2_left)
+ls = ls.concatenate(l3, rt.vacuum(), wd2_right + wd3_left)
+ls = ls.concatenate(l4, rt.vacuum(), wd3_right + wd4_left)
+ls = ls.concatenate(obj1, rt.vacuum(), wd4_right + wd5_left)
+ls = ls.concatenate(sample, rt.constant(n_oil), thickness_oil)
+ls = ls.concatenate(obj2, rt.constant(n_water), thickness_water_immersion) # detection objective
+ls = ls.concatenate(l8, rt.vacuum(), wd7_right + wd8_left) # tube lens
+
+if include_relay:
+    ls = ls.concatenate(l9, rt.vacuum(), wd8_right + wd9_left) # relay lens #1
+    ls = ls.concatenate(l10, rt.vacuum(), wd9_right + wd10_left) # relay lens #2
+    ls = ls.concatenate(rt.system([rt.flat_surface([0, 0, 0], [0, 0, 1], aperture_radius)], []),  # add camera
+                        rt.vacuum(), wd10_right)
+else:
+    ls = ls.concatenate(rt.system([rt.flat_surface([0, 0, 0], [0, 0, 1], aperture_radius)], []),  # add camera
+                        rt.vacuum(), wd8_right)
+
+#abcd = ls.compute_paraxial_matrix(wavelength, rt.vacuum(), rt.vacuum())
 
 # #######################################
 # ray tracing
 # #######################################
 max_angle = 0.5 * np.pi/180
-sep = 4 * 0.55 * (1.8/4 * 400/300 * 200/100) # edge of mitutoyo pupil
-lateral_shift = 0 * -np.sin(20 * np.pi/180) * sep
-nrays = 7
-rays = np.concatenate((rt.get_ray_fan([0, 0, 0], max_angle, nrays, wavelength_odt),
-                       rt.get_ray_fan([1/3 * sep, 0, 1/3 * lateral_shift], max_angle, nrays, wavelength_odt),
-                       rt.get_ray_fan([2/3 * sep, 0, 2/3 * lateral_shift], max_angle, nrays, wavelength_odt),
-                       rt.get_ray_fan([sep, 0, lateral_shift], max_angle, nrays, wavelength_odt)),
-                      axis=0)
+# edge of detection pupil
+sep = f_detection * na_detection * (f_excitation/f_detection * efl3/efl4 * efl1/efl2)
+# account for tilted DMD
+lateral_shift = -np.sin(dmd_tilt_angle) * sep
 
-rays = rt.ray_trace_system(rays, surfaces_odt, materials)
+# generate rays
+pupil_fractions = [0, 1/3, 2/3, 0.95]
+nrays = 21
+rays = np.concatenate([rt.get_ray_fan([fr * sep, 0, fr * lateral_shift - wd1_left], max_angle, nrays, wavelength) for fr in pupil_fractions], axis=0)
+
+# ray trace
+rays = ls.ray_trace(rays, rt.vacuum(), rt.vacuum())
 
 # #######################################
 # plot results
 # #######################################
-figh = rt.plot_rays(rays, surfaces_odt, colors=["k"] * nrays + ["b"] * nrays + ["r"] * nrays + ["g"] * nrays, figsize=(16, 8))
-ax = plt.gca()
-ax.plot([l5s_odt - 1.8, l5s_odt - 1.8], [-10, 10], 'k--')
-plt.suptitle("ODT")
+figh, ax = ls.plot(rays, colors=["k"] * nrays + ["b"] * nrays + ["r"] * nrays + ["g"] * nrays,
+                   figsize=(16, 8))
+ax.plot([ls.surfaces[12].center[2] - f_excitation, ls.surfaces[12].center[2] - f_excitation],
+        [-aperture_radius, aperture_radius], 'm--', label="objective FP")
+ax.legend()
+figh.suptitle("ODT optical system", fontsize=16)
+
+
+saving = True
+if saving:
+    figh_save, ax = ls.plot(rays,
+                            colors=["k"] * nrays + ["b"] * nrays + ["r"] * nrays + ["g"] * nrays,
+                            show_names=False,
+                            figsize=(16, 8))
+    ax.set_xlim([1800, 2230])
+    ax.set_ylim([-15, 15])
+    tstamp = datetime.datetime.now().strftime('%Y_%m_%d_%H;%M;%S')
+    figh_save.savefig(Path.home() / "Desktop" / f"{tstamp:s}_optical_system.pdf", bbox_inches="tight")
