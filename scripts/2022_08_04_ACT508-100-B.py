@@ -65,7 +65,7 @@ for ii, wl in enumerate(design_wavelengths):
     ns = [m.n(wl) for m in materials]
 
     # compute effective focal lengths and principle plans using paraxial optics
-    abcd = rt.compute_paraxial(surfaces, ns, initial_distance=lens_start)
+    abcd = rt.compute_paraxial_matrix(surfaces, ns, initial_distance=lens_start)
     dx, abcd_focal, eflx, dy, abcd_focal_y, efly = rt.find_paraxial_focus(abcd)
 
     # determine focal points

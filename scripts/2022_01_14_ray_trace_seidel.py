@@ -32,7 +32,7 @@ materials = [rt.vacuum(),
 # auto-focus
 surfaces, materials = rt.auto_focus(surfaces, materials, wavelength, mode="paraxial-focused")
 
-abcd = rt.compute_paraxial(surfaces, [m.n(wavelength) for m in materials], 400)
+abcd = rt.compute_paraxial_matrix(surfaces, [m.n(wavelength) for m in materials], 400)
 
 # ray trace
 nrays = 101
