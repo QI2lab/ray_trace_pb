@@ -44,6 +44,7 @@ thickness_sample = 0.1
 n_top_coverslip = 1.5
 # n_top_coverslip = 1.333
 thickness_top_coverslip = 1.25 # measurement of Alexis' flow cell
+# thickness_top_coverslip = 0.17
 n_water = 1.333
 # f = d1/n1 + d2/n2 + d3/n3
 thickness_water_immersion = (f_detection - thickness_sample / n_sample - thickness_top_coverslip / n_top_coverslip) * n_water
