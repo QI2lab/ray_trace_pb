@@ -8,7 +8,7 @@ dynamic = ["version"]
 authors = [
     {name = "Peter T. Brown", email="ptbrown1729@gmail.com"}
 ]
-#license = {file = "LICENSE"}
+license = {file = "LICENSE"}
 keywords = ["ray tracing"]
 description = "A simple python ray tracing package"
 readme = "README.md"
