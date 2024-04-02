@@ -27,6 +27,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import warnings
 
+
 # analyze optical systems
 def ray_trace_system(rays, surfaces, materials):
     """
@@ -54,7 +55,7 @@ def ray_trace_system(rays, surfaces, materials):
 
 def compute_paraxial_matrix(surfaces, materials, wavelength, initial_distance=0, final_distance=0):
     """
-    # todo: instead of indices of refraction use a material ... and derive index of refraction from material + wavelength
+    # todo: instead of indices of refraction use a material ...and derive index of refraction from material + wavelength
     Generate the ray transfer (ABCD) matrix for an optical system
 
     Assume that the optical system starts at the provided initial distance before the first surface
@@ -64,7 +65,7 @@ def compute_paraxial_matrix(surfaces, materials, wavelength, initial_distance=0,
     @param indices_of_refraction: indices of refraction between surfaces
     @return abcd_mat:
     """
-    mats = [] # helpful for debugging
+    mats = []  # helpful for debugging
 
     indices_of_refraction = [m.n(wavelength) for m in materials]
 
@@ -147,10 +148,10 @@ def compute_third_order_seidel(surfaces, materials, wavelength):
     # needed quantities
     nsurfaces = len(surfaces)
     aberrations_3rd = np.zeros((nsurfaces, 5))
-    s = np.zeros(nsurfaces) # object points per surface
-    sp = np.zeros(nsurfaces) # image points per surface
-    h = np.zeros(nsurfaces) # h1 = s1 / (t1 - s1) where t = distance from entrance pupil to surface vertex
-    H = np.zeros(nsurfaces) # H1 = t1 / no
+    s = np.zeros(nsurfaces)  # object points per surface
+    sp = np.zeros(nsurfaces)  # image points per surface
+    h = np.zeros(nsurfaces)  # h1 = s1 / (t1 - s1) where t = distance from entrance pupil to surface vertex
+    H = np.zeros(nsurfaces)  # H1 = t1 / no
     t = np.zeros(nsurfaces)
     tp = np.zeros(nsurfaces)
     d = np.zeros(nsurfaces - 1)
@@ -178,7 +179,7 @@ def compute_third_order_seidel(surfaces, materials, wavelength):
         # see Born and Wolf chapter 5.5 eq's (9) and (16)
         # h[ii] = h[ii - 1] * s[ii] / sp[ii - 1] # recursion has problem if one is zero...
         h[ii] = s[ii] / (t[ii] - s[ii])
-        #H[ii] = H[ii - 1] * t[ii] / tp[ii - 1]
+        # H[ii] = H[ii - 1] * t[ii] / tp[ii - 1]
         H[ii] = t[ii] / materials[ii]
 
     # solve for aberrations
@@ -236,7 +237,8 @@ def auto_focus(surfaces, materials, wavelength, mode="ray-fan"):
 
         focus = surfaces[-1].paraxial_center[2] + 0.5 * (dx + dy) * np.sign(surfaces[-1].input_axis[2])
     else:
-        raise ValueError(f"mode must be 'ray-fan', or 'collimated' 'paraxial-focused', or paraxial-collimated' but was '{mode:s}'")
+        raise ValueError(f"mode must be 'ray-fan', or 'collimated' 'paraxial-focused',"
+                         f" or paraxial-collimated' but was '{mode:s}'")
 
     updated_surfaces = surfaces + [flat_surface([0, 0, focus], surfaces[-1].input_axis, surfaces[-1].aperture_rad)]
     updated_n = materials + [materials[-1]]
@@ -603,7 +605,7 @@ def intersect_rays(ray1, ray2):
         # otherwise, d1 \cross d2 = 0, so rays are parallel and leave as NaN
 
     # determine distance along ray2, but avoid undefined expressions
-    t = np.zeros(len(ray1))* np.nan
+    t = np.zeros(len(ray1)) * np.nan
     with np.errstate(all="ignore"):
         use_z = dz1 != 0
         use_y = np.logical_and(np.logical_not(use_z), dy1 != 0)
@@ -736,7 +738,6 @@ def plot_rays(ray_array, surfaces: list = None, phi: float = 0, colors: list = N
     else:
         figh = ax.get_figure()
 
-
     # ray height in the desired azimuthal plane
     h_data = ray_array[:, :, 0] * np.cos(phi) + ray_array[:, :, 1] * np.sin(phi)
 
@@ -785,6 +786,7 @@ def plot_spot_diagram(rays, **kwargs):
     ax.axis("equal")
 
     return figh, ax
+
 
 # ################################################
 # collections of optical elements
@@ -864,7 +866,8 @@ class system:
         s = self.surfaces + new_surfaces
         materials = self.materials + [material] + other.materials
         names = self.names + other.names
-        surfaces_by_name = np.concatenate((self.surfaces_by_name, other.surfaces_by_name + np.max(self.surfaces_by_name) + 1))
+        surfaces_by_name = np.concatenate((self.surfaces_by_name,
+                                           other.surfaces_by_name + np.max(self.surfaces_by_name) + 1))
         return system(s, materials, names=names, surfaces_by_name=surfaces_by_name)
 
     def ray_trace(self, rays, input_medium, output_medium):
@@ -889,7 +892,8 @@ class system:
 
     def compute_paraxial_matrix(self, wavelength, initial_material, final_material):
         """
-        # todo: instead of indices of refraction use a material ... and derive index of refraction from material + wavelength
+        # todo: instead of indices of refraction use a material ... and derive index of refraction from material +
+        # wavelength
         Generate the ray transfer (ABCD) matrix for an optical system
 
         Assume that the optical system starts at the provided initial distance before the first surface
@@ -924,6 +928,7 @@ class system:
                 mats.append(abcd_prop)
 
         return ray_xfer_mat
+
     def get_cardinal_points(self, wavelength, initial_material, final_material):
         """
 
@@ -960,10 +965,10 @@ class system:
     def plot(self, ray_array=None,
              phi: float = 0,
              colors: list = None,
-             label = None,
+             label: str = None,
              ax = None,
-             show_names=True,
-             fontsize=16,
+             show_names: bool = True,
+             fontsize: float = 16,
              **kwargs):
         """
         Plot rays and optical surfaces
@@ -1022,9 +1027,9 @@ class system:
                 if show_names:
                     if ii == 0 or self.surfaces_by_name[ii] != self.surfaces_by_name[ii - 1]:
 
-                        ax.text(s.paraxial_center[2], # x
-                                s.paraxial_center[0] + 1.1 * s.aperture_rad, # y
-                                self.names[self.surfaces_by_name[ii]], # s
+                        ax.text(s.paraxial_center[2],  # x
+                                s.paraxial_center[0] + 1.1 * s.aperture_rad,  # y
+                                self.names[self.surfaces_by_name[ii]],  # s
                                 horizontalalignment="center",
                                 fontsize=fontsize
                                 )
@@ -1105,7 +1110,6 @@ class doublet(system):
             materials = [material_flint, material_crown]
 
         super().__init__(surfaces, materials, names=names, surfaces_by_name=None)
-
 
 
 # ################################################
@@ -1283,12 +1287,10 @@ class flat_surface(refracting_surface):
         self.normal = np.array(normal).squeeze()
         super().__init__(normal, normal, center, center, aperture_rad, is_aperture_stop)
 
-
     def get_normal(self, pts):
         pts = np.atleast_2d(pts)
         normal = np.atleast_2d(self.normal)
         return np.tile(normal, (pts.shape[0], 1))
-
 
     def get_intersect(self, rays, material):
         """
@@ -1297,7 +1299,6 @@ class flat_surface(refracting_surface):
         rays_int, ts = propagate_ray2plane(rays, self.normal, self.center, material, exclude_backward_propagation=True)
 
         return rays_int
-
 
     def is_pt_on_surface(self, pts):
         pts = np.atleast_2d(pts)
@@ -1311,7 +1312,6 @@ class flat_surface(refracting_surface):
 
         return on_surface
 
-
     def get_ray_transfer_matrix(self, n1=None, n2=None):
         mat = np.array([[1, 0, 0, 0, 0],
                         [0, 1, 0, 0, 0],
@@ -1319,7 +1319,6 @@ class flat_surface(refracting_surface):
                         [0, 0, 0, 1, 0],
                         [0, 0, 0, 0, 1]])
         return mat
-
 
     def get_seidel_third_order_fns(self, n1, n2, s, sp, t, tp, h, H):
         if s != 0:
@@ -1346,7 +1345,6 @@ class flat_surface(refracting_surface):
                            ])
 
         return coeffs
-
 
     def draw(self, ax):
         # take Y = 0 portion of surface
@@ -1451,7 +1449,6 @@ class spherical_surface(refracting_surface):
         input_axis = (0, 0, 1)
         return cls(radius, [0, 0, surface_z_position + radius], aperture_rad, input_axis, is_aperture_stop)
 
-
     def get_normal(self, pts):
         """
         Return the outward facing normal if self.aperture_radius > 0, otherwise the inward facing normal
@@ -1461,7 +1458,6 @@ class spherical_surface(refracting_surface):
         pts = np.atleast_2d(pts)[:, :3]
         normals = (pts - np.expand_dims(np.array(self.center), axis=0)) / self.radius
         return normals
-
 
     def get_intersect(self, rays, material):
         rays = np.atleast_2d(rays)
@@ -1501,7 +1497,6 @@ class spherical_surface(refracting_surface):
 
         return rays_int
 
-
     def is_pt_on_surface(self, pts):
         """
         Check if point is on sphere surfaces
@@ -1511,19 +1506,18 @@ class spherical_surface(refracting_surface):
         on_surface = np.abs(diff - self.radius**2) < 1e-12
         return on_surface
 
-
     def get_seidel_third_order_fns(self, n1, n2, s, sp, t, tp, h, H):
         if s != 0:
-            K = n1 * (1 / self.radius - 1 / s) # abbe invariant for image/obj point
+            K = n1 * (1 / self.radius - 1 / s)  # abbe invariant for image/obj point
             c1 = (1 / (n2 * sp) - 1 / (n1 * s))
-        else: # in this case h = 0, and K only enters with a factor of h so doesn't matter...
+        else:  # in this case h = 0, and K only enters with a factor of h so doesn't matter...
             K = 0
             c1 = 0
 
         if t != 0:
-            L = n1 * (1 / self.radius - 1 / t) # abbe invariant for pupil/pupil image point
+            L = n1 * (1 / self.radius - 1 / t)  # abbe invariant for pupil/pupil image point
             c2 = (1 / (n2 * tp) - 1 / (n1 * t))
-        else: # in this case H = 0, and L only enters with a factor of H so doesn't matter...
+        else:  # in this case H = 0, and L only enters with a factor of H so doesn't matter...
             L = 0
             c2 = 0
 
@@ -1554,7 +1548,6 @@ class spherical_surface(refracting_surface):
                         [0,    0, 0,    0, 1]])
         return mat
 
-
     def draw(self, ax):
         # todo: modify to allow arbitrary input axis
         theta_max = np.arcsin(self.aperture_rad / np.abs(self.radius))
@@ -1580,19 +1573,17 @@ class perfect_lens(refracting_surface):
         self.focal_len = focal_len
         self.alpha = alpha
         self.normal = np.array(normal).squeeze()
-        aperture_rad = focal_len * np.sin(self.alpha) # only correct up to factor of n1
+        aperture_rad = focal_len * np.sin(self.alpha)  # only correct up to factor of n1
         super().__init__(normal, normal, center, center, aperture_rad, is_aperture_stop)
 
     def get_normal(self):
         pass
-
 
     def get_intersect(self, rays, material):
         rays_int, ts = propagate_ray2plane(rays, self.normal, self.center, material)
         with np.errstate(invalid="ignore"):
             rays_int[ts < 0] = np.nan
         return rays_int
-
 
     def is_pt_on_surface(self, pts):
         pts = np.atleast_2d(pts)
@@ -1605,7 +1596,6 @@ class perfect_lens(refracting_surface):
         on_surface = np.abs((x - xc) * nx + (y - yc) * ny + (z - zc) * nz) < 1e-12
 
         return on_surface
-
 
     def propagate(self, rays, material1, material2):
         """
@@ -1793,7 +1783,6 @@ class perfect_lens(refracting_surface):
 
         return rays_out
 
-
     def get_ray_transfer_matrix(self, n1, n2):
         mat = np.array([[1,    0, 0,    0, 0],
                         [-1/self.focal_len, 1, 0,    0, 0],
@@ -1818,13 +1807,14 @@ class perfect_lens(refracting_surface):
 
         ax.plot(pts[:, 2], pts[:, 0], 'k')
 
+
 # ################################################
 # optical materials
 # for information about various materials, see https://refractiveindex.info/ or https://www.schott.com
 # abbe number vd = (nd - 1) / (nf - nc)
 # vd > 50 = crown glass, otherwise flint glass
 # ################################################
-class material():
+class material:
 
     # helium d-line
     wd = 0.5876
