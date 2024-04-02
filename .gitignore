@@ -2,3 +2,6 @@ raytrace.egg-info
 __pycache__
 # pycharm project
 .idea
+
+# built documentation
+docs/build
