@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "raytrace"
+dynamic = ["version"]
+authors = [
+    {name = "Peter T. Brown", email="ptbrown1729@gmail.com"}
+]
+#license = {file = "LICENSE"}
+keywords = ["ray tracing"]
+description = "A simple python ray tracing package"
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+requires-python = ">=3.9"
+dependencies = ["numpy",
+                "matplotlib",
+                ]
+
+[tool.setuptools]
+packages = ["raytrace"]
+
+[tool.setuptools.dynamic]
+version = {attr = "raytrace.__version__"}
+
+[project.optional-dependencies]
+dev = ['sphinx']

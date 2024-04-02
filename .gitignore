@@ -3,5 +3,8 @@ __pycache__
 # pycharm project
 .idea
 
+#
+build
+
 # built documentation
 docs/build
