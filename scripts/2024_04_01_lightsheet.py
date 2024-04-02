@@ -2,17 +2,22 @@
 Lightsheet with refocus using ETL
 """
 import time
-
+import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import raytrace.raytrace as rt
+from raytrace.materials import constant
 from pathlib import Path
 import zarr
 
 # save dir
-fdir = Path(r"/mnt/scratch1/2024_04_01/lightsheet_raytrace")
-if not fdir.exists():
-    fdir.mkdir(parents=True)
+tstamp = datetime.datetime.now().strftime('%Y_%m_%d_%H;%M;%S')
+
+fdir = Path(r"/mnt/scratch1/2024_04_01") / f"{tstamp:s}_lightsheet_raytrace"
+fdir.mkdir(parents=True, exist_ok=True)
+
+save_dir_trains = fdir / "rt_diagrams"
+save_dir_trains.mkdir(exist_ok=True)
 
 # define optical train
 settings = {"nrays": 1001,
@@ -34,6 +39,13 @@ n_surfaces = 17
 rad_curvs1 = np.linspace(settings["aperture_radius_etl"], 55, 201)
 rad_curvs2 = np.linspace(55, 400, 101, endpoint=True)
 rad_curvs = np.concatenate((rad_curvs1, rad_curvs2, np.array([1e9])))
+
+def f2d(f): return 1e3 / f
+def d2f(d): return 1e3 / d
+
+focal_lens_mm = rad_curvs / (settings["n_etl"] - 1)
+dpt = f2d(focal_lens_mm)
+
 intersect_spread = np.zeros_like(rad_curvs)
 
 # save ray results to zarr
@@ -43,6 +55,8 @@ z.create("rays",
          chunks=(1, n_surfaces, settings["nrays"], 8),
          dtype=float)
 z.array("radius_curvatures", rad_curvs, dtype=float)
+z.array("etl_diopters", dpt, dtype=float)
+z.array("focal_lens_mm", focal_lens_mm, dtype=float)
 z.rays.attrs["array_columns"] = ["x", "y", "z", "dx", "dy", "dz", "phase", "wavelength"]
 z.attrs["settings"] = settings
 
@@ -52,7 +66,6 @@ tstart = time.perf_counter()
 for ii, rad_curv in enumerate(rad_curvs):
     print(f"{ii+1:d}/{len(rad_curvs):d} in {time.perf_counter() - tstart:.2f}s", end="\r")
     # etl derived params
-    dpt = (settings["n_etl"] - 1) / rad_curv * 1e3
     t_center = settings["t_edge"] + rad_curv * (1 - np.sqrt(1 - (settings["aperture_radius_etl"] / rad_curv) ** 2))
 
 
@@ -70,7 +83,7 @@ for ii, rad_curv in enumerate(rad_curvs):
                                                       t_center,
                                                       settings["aperture_radius_etl"]),
                      ],
-                     materials=[rt.constant(settings["n_etl"])],
+                     materials=[constant(settings["n_etl"])],
                     names="etl")
 
     l1 = rt.system([rt.perfect_lens(settings["f1"],
@@ -107,8 +120,8 @@ for ii, rad_curv in enumerate(rad_curvs):
                                         [0, 0, 1],
                                         settings["aperture_radius"])
                         ],
-                        [rt.constant(settings["n_coverglass"]),
-                                 rt.constant(settings["n_immersion"])],
+                        [constant(settings["n_coverglass"]),
+                         constant(settings["n_immersion"])],
                        "coverglass")
 
 
@@ -122,12 +135,12 @@ for ii, rad_curv in enumerate(rad_curvs):
     z.rays[ii] = rays
 
     # plot optical system
-    desc_str = f"r={rad_curv:.1f}mm"
+    desc_str = f"f={focal_lens_mm[ii]:.1f}mm_r={rad_curv:.1f}mm_dpt={dpt[ii]:.1f}"
     figh, ax = osys.plot(rays, figsize=(20, 15))
     figh.suptitle(desc_str)
     ax.set_xlim([-100, 700])
 
-    fname_fig = fdir / f"{desc_str:s}_rays.png"
+    fname_fig = save_dir_trains / f"{desc_str:s}_rays.png"
     figh.savefig(fname_fig)
     plt.close(figh)
 
@@ -150,18 +163,26 @@ for ii, rad_curv in enumerate(rad_curvs):
 print()
 
 plt.switch_backend("Qt5Agg")
+xlim = [np.min(focal_lens_mm), np.max(focal_lens_mm[:-2])]
+xticks = np.arange(50, xlim[1], 100)
 
 figh_out = plt.figure(figsize=(20, 15))
 ax = figh_out.add_subplot(2, 1, 1)
 ax.set_ylabel("spread of intersects (mm)")
-ax.plot(rad_curvs, intersect_spread)
-ax.set_xlim([0, np.max(rad_curvs[:-2])])
+ax.plot(focal_lens_mm, intersect_spread)
+ax.set_xlim(xlim)
+ax.set_xticks(xticks)
+secax = ax.secondary_xaxis('top', functions=(f2d, d2f))
+secax.set_xlabel('Power (dpt)')
 
 notnan_fraction = 1 - np.sum(np.isnan(z.rays[:, -1, :, 0]), axis=-1) / settings["nrays"]
 ax = figh_out.add_subplot(2, 1, 2)
 ax.set_ylabel("Fraction of rays transmitted")
-ax.set_xlabel("Radius of curvature (mm)")
-ax.plot(rad_curvs, notnan_fraction)
-ax.set_xlim([0, np.max(rad_curvs[:-2])])
+ax.set_xlabel("Focal length (mm)")
+ax.plot(focal_lens_mm, notnan_fraction)
+ax.set_xlim(xlim)
+ax.set_xticks(xticks)
+
+secax.set_xticks(f2d(xticks))
 
 figh_out.savefig(fdir / f"summary.png")
