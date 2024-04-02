@@ -26,12 +26,17 @@ import copy
 from typing import Optional
 import numpy as np
 from numpy.typing import NDArray
+from matplotlib.figure import Figure
+from matplotlib.axes._axes import Axes
 import matplotlib.pyplot as plt
 import warnings
+from raytrace.materials import material, vacuum
 
 
 # analyze optical systems
-def ray_trace_system(rays: NDArray, surfaces: list, materials: list):
+def ray_trace_system(rays: NDArray,
+                     surfaces: list,
+                     materials: list[material]):
     """
     race rays through a system of diffractive optical elements
 
@@ -56,12 +61,12 @@ def ray_trace_system(rays: NDArray, surfaces: list, materials: list):
 
 
 def compute_paraxial_matrix(surfaces: list,
-                            materials: list,
+                            materials: list[material],
                             wavelength: float,
                             initial_distance: float = 0,
                             final_distance: float = 0):
     """
-    # todo: instead of indices of refraction use a material ...and derive index of refraction from material + wavelength
+    # todo: instead of indices of refraction use a material and derive index of refraction from material + wavelength
     Generate the ray transfer (ABCD) matrix for an optical system
 
     Assume that the optical system starts at the provided initial distance before the first surface
@@ -102,7 +107,8 @@ def compute_paraxial_matrix(surfaces: list,
     return ray_xfer_mat
 
 
-def get_reversed_system(surfaces: list, materials: list):
+def get_reversed_system(surfaces: list,
+                        materials: list[material]):
     """
     Create a new optical system where the order of the surfaces is reversed.
 
@@ -121,7 +127,9 @@ def get_reversed_system(surfaces: list, materials: list):
     return surfaces_rev, n_rev
 
 
-def compute_third_order_seidel(surfaces, materials, wavelength):
+def compute_third_order_seidel(surfaces: list,
+                               materials: list[material],
+                               wavelength: float):
     """
 
     :param surfaces:
@@ -208,7 +216,7 @@ def compute_third_order_seidel(surfaces, materials, wavelength):
 
 # helper methods for finding focus, cardinal points, etc.
 def auto_focus(surfaces: list,
-               materials: list,
+               materials: list[material],
                wavelength: float,
                mode: str = "ray-fan"):
     """
@@ -264,7 +272,8 @@ def auto_focus(surfaces: list,
     return updated_surfaces, updated_n
 
 
-def find_paraxial_focus(abcd_mat, n=1):
+def find_paraxial_focus(abcd_mat: NDArray,
+                        n: float = 1):
     """
     Find paraxial focus of a paraxial optical system from its ray-tarnsfer matrix
 
@@ -298,7 +307,7 @@ def find_paraxial_focus(abcd_mat, n=1):
 
 
 def find_cardinal_points(surfaces: list,
-                         materials: list,
+                         materials: list[material],
                          wavelength: float):
     """
     Compute cardinal points from ray tracing very small angles
@@ -348,7 +357,9 @@ def find_cardinal_points(surfaces: list,
     return f1, f2, pp1, pp2, efl1, efl2
 
 
-def find_paraxial_collimated_distance(mat1: np.ndarray, mat2: np.ndarray, n: float):
+def find_paraxial_collimated_distance(mat1: NDArray,
+                                      mat2: NDArray,
+                                      n: float) -> (float, float):
     """
     Given two sets of surfaces (e.g. two lenses) determine the distance which should be inserted between them
     to give a system which converts collimated rays to collimated rays
@@ -356,7 +367,7 @@ def find_paraxial_collimated_distance(mat1: np.ndarray, mat2: np.ndarray, n: flo
     :param mat1: ABCD matrix of first optic
     :param mat2: ABCD matrix of second optic
     :param n: index of refraction of intervening medium
-    :return distance:
+    :return dx, dy:
     """
 
     dx = -(mat1[0, 0] / mat1[1, 0] + mat2[1, 1] / mat2[1, 0]) * n
@@ -374,15 +385,18 @@ def get_free_space_abcd(d: float, n: float = 1.):
     :param n: index of refraction
     :return mat:
     """
-    mat = np.array([[1, d/n, 0, 0, 0],
-                    [0, 1, 0, 0, 0],
-                    [0, 0, 1, d/n, 0],
-                    [0, 0, 0, 1, 0],
-                    [0, 0, 0, 0, 1]])
+    mat = np.array([[1, d/n, 0, 0,   0],
+                    [0, 1,   0, 0,   0],
+                    [0, 0,   1, d/n, 0],
+                    [0, 0,   0, 1,   0],
+                    [0, 0,   0, 0,   1]])
     return mat
 
 
-def refract(rays: np.ndarray, normals: np.ndarray, material1, material2):
+def refract(rays: NDArray,
+            normals: NDArray,
+            material1: material,
+            material2: material):
     """
     Refracts rays at surface with given normal by applying Snell's law
 
@@ -424,7 +438,7 @@ def refract(rays: np.ndarray, normals: np.ndarray, material1, material2):
     return rays_out
 
 
-def reflect(rays: np.ndarray, normals: np.ndarray):
+def reflect(rays: NDArray, normals: NDArray) -> NDArray:
     """
     Find new rays after reflecting off a surface defined by a given normal using the law of reflection
 
@@ -464,7 +478,7 @@ def reflect(rays: np.ndarray, normals: np.ndarray):
 
 
 # tools for creating ray fans, manipulating rays, etc.
-def get_ray_fan(pt: np.ndarray,
+def get_ray_fan(pt: NDArray,
                 theta_max: float,
                 n_thetas: int,
                 wavelengths: float,
@@ -477,11 +491,11 @@ def get_ray_fan(pt: np.ndarray,
     :param theta_max: maximum angle in radians
     :param n_thetas: number of rays at different angles on axis
     :param wavelengths:
-    :param int nphis: number of points of rotation about the optical axis. If nphis = 1, all rays will be in the plane
+    :param nphis: number of points of rotation about the optical axis. If nphis = 1, all rays will be in the plane
     :param center_ray:
     """
 
-    # consider the central ray in direction no. Construct a n orthonormal basis from enx = y x no, eny = no x enx
+    # consider the central ray in direction no. Construct an orthonormal basis from enx = y x no, eny = no x enx
     # then construct rays v(theta, phi), where theta is the angle between v and no and phi is the angle rotated about no
     # v(theta, phi) = cos(theta) * no + cos(phi) * sin(theta) * enx + sin(phi) * sin(theta) * eny
     center_ray = np.array(center_ray)
@@ -516,13 +530,13 @@ def get_ray_fan(pt: np.ndarray,
     return rays
 
 
-def get_collimated_rays(pt,
+def get_collimated_rays(pt: NDArray,
                         displacement_max,
                         n_disps: int,
                         wavelengths: float,
                         nphis: int = 1,
                         phi_start: float = 0.,
-                        normal=(0, 0, 1)) -> np.ndarray:
+                        normal=(0, 0, 1)) -> NDArray:
     """
     Get a fan of collimated arrays along a certain direction. The rays will be generated in a plane
     with normal along this direction, which will generally not be perpendicular to the optical axis.
@@ -581,7 +595,7 @@ def get_collimated_rays(pt,
     return rays
 
 
-def intersect_rays(ray1: np.ndarray, ray2: np.ndarray):
+def intersect_rays(ray1: NDArray, ray2: NDArray) -> NDArray:
     """
     Find intersection point between two rays, assuming free space propagation
 
@@ -657,11 +671,11 @@ def intersect_rays(ray1: np.ndarray, ray2: np.ndarray):
     return intersect1
 
 
-def propagate_ray2plane(rays: np.ndarray,
-                        normal: np.ndarray,
-                        center: np.ndarray,
-                        material,
-                        exclude_backward_propagation: bool = False):
+def propagate_ray2plane(rays: NDArray,
+                        normal: NDArray,
+                        center: NDArray,
+                        material: material,
+                        exclude_backward_propagation: bool = False) -> (NDArray, NDArray):
     """
     Find intersection between rays and a plane. Plane is defined by a normal vector and a point on the
     plane
@@ -721,14 +735,14 @@ def propagate_ray2plane(rays: np.ndarray,
     return rays_out, ts
 
 
-def ray_angle_about_axis(rays: np.ndarray, reference_axis):
+def ray_angle_about_axis(rays: NDArray, reference_axis: NDArray) -> (NDArray, NDArray):
     """
     Given a set of rays, compute their angles relative to a given axis, and compute the orthogonal direction to the
 
     axis which the ray travels in
     :param rays:
     :param reference_axis:
-    :return:
+    :return angles, na:
     """
     rays = np.atleast_2d(rays)
 
@@ -740,14 +754,16 @@ def ray_angle_about_axis(rays: np.ndarray, reference_axis):
     return angles, na
 
 
-def dist_pt2plane(pts, normal, center):
+def dist_pt2plane(pts: NDArray,
+                  normal: NDArray,
+                  center: NDArray) -> (NDArray, NDArray):
     """
     Calculate minimum distance between points and a plane defined by normal and center
 
     :param pts:
     :param normal:
     :param center:
-    :return:
+    :return dists, nearest_pts:
     """
     pts = np.atleast_2d(pts)
     npts = pts.shape[0]
@@ -761,89 +777,6 @@ def dist_pt2plane(pts, normal, center):
     return dists, nearest_pts
 
 
-# display
-def plot_rays(ray_array: np.ndarray,
-              surfaces: list = None,
-              phi: float = 0,
-              colors: list = None,
-              label: str = None,
-              ax=None,
-              **kwargs):
-    """
-    Plot rays and optical surfaces
-
-    :param ray_array: nsurfaces X nrays x 8
-    :param surfaces: list of surfaces
-    :param phi: angle describing the azimuthal plane to plot. phi = 0 gives the meridional/tangential plane while
-      phi = pi/2 gives the sagittal plane. # todo: not implemented for drawing the surface projections
-    :param colors: list of colors to plot rays
-    :param label:
-    :param ax: axis to plot results on. If None, a new figure will be generated
-    :param kwargs: passed through to figure, if it does not already exist
-    :return fig_handle, axis:
-    """
-    raise DeprecationWarning("Use System() instead")
-
-    if ax is None:
-        figh = plt.figure(**kwargs)
-        ax = plt.subplot(1, 1, 1)
-    else:
-        figh = ax.get_figure()
-
-    # ray height in the desired azimuthal plane
-    h_data = ray_array[:, :, 0] * np.cos(phi) + ray_array[:, :, 1] * np.sin(phi)
-
-    if label is None:
-        label = ""
-
-    if colors is None:
-        ax.plot(ray_array[:, :, 2], h_data, label=label)
-    else:
-        # ensure color argument is ok
-        if len(colors) == 1 and not isinstance(colors, list):
-            colors = [colors] * ray_array.shape[1]
-
-        if len(colors) != ray_array.shape[1]:
-            raise ValueError("len(colors) must equal ray_array.shape[1]")
-
-        # plot each ray a different color
-        for ii in range(ray_array.shape[1]):
-            if ii == 0:
-                ax.plot(ray_array[:, ii, 2], h_data[:, ii], color=colors[ii], label=label)
-            else:
-                ax.plot(ray_array[:, ii, 2], h_data[:, ii], color=colors[ii])
-
-    ax.set_xlabel("z-position")
-    ax.set_ylabel("height")
-
-    if surfaces is not None:
-        for s in surfaces:
-            s.draw(ax)
-
-    return figh, ax
-
-
-def plot_spot_diagram(rays: np.ndarray, **kwargs):
-    """
-
-    :param rays:
-    :param kwargs:
-    :return:
-    """
-    # Todo: think spot diagram should have points equally spaced in the aperture
-    figh = plt.figure(**kwargs)
-    figh.suptitle("Spot diagram")
-    ax = figh.add_subplot(1, 1, 1)
-
-    ax.plot(rays[:, 1], rays[:, 0], "b.")
-    ax.set_xlabel("y-position")
-    ax.set_ylabel("x-position")
-
-    ax.axis("equal")
-
-    return figh, ax
-
-
 # ################################################
 # collections of optical elements
 # ################################################
@@ -854,7 +787,7 @@ class system:
 
     def __init__(self,
                  surfaces: list,
-                 materials: list,
+                 materials: list[material],
                  names: list[str] = None,
                  surfaces_by_name=None):
         """
@@ -905,7 +838,7 @@ class system:
 
     def concatenate(self,
                     other,
-                    material,
+                    material: material,
                     distance: float = 0,
                     axis=(0, 0, 1)):
         """
@@ -915,7 +848,7 @@ class system:
         :param material:
         :param distance:
         :param axis:
-        :return:
+        :return new_system:
         """
         # specify distance between surfaces as distances between the paraxial foci
 
@@ -938,18 +871,18 @@ class system:
         return system(s, materials, names=names, surfaces_by_name=surfaces_by_name)
 
     def ray_trace(self,
-                  rays: np.ndarray,
-                  input_medium,
-                  output_medium) -> np.ndarray:
+                  rays: NDArray,
+                  initial_material: material,
+                  final_material: material) -> NDArray:
         """
         ray trace through optical system
 
         :param rays:
-        :param input_medium:
-        :param output_medium:
-        :return:
+        :param initial_material:
+        :param final_material:
+        :return rays:
         """
-        materials = [input_medium] + self.materials + [output_medium]
+        materials = [initial_material] + self.materials + [final_material]
 
         if len(materials) != len(self.surfaces) + 1:
             raise ValueError("length of materials should be len(surfaces) + 1")
@@ -963,8 +896,8 @@ class system:
 
     def compute_paraxial_matrix(self,
                                 wavelength: float,
-                                initial_material,
-                                final_material):
+                                initial_material: material,
+                                final_material: material):
         """
         Generate the ray transfer (ABCD) matrix for an optical system
         Assume that the optical system starts at the provided initial distance before the first surface
@@ -1005,8 +938,8 @@ class system:
 
     def get_cardinal_points(self,
                             wavelength: float,
-                            initial_material,
-                            final_material):
+                            initial_material: material,
+                            final_material: material):
         """
 
         :param wavelength:
@@ -1044,10 +977,10 @@ class system:
              phi: float = 0,
              colors: Optional[list] = None,
              label: str = None,
-             ax = None,
+             ax: Optional[Axes] = None,
              show_names: bool = True,
              fontsize: float = 16,
-             **kwargs):
+             **kwargs) -> (Figure, Axes):
         """
         Plot rays and optical surfaces
 
@@ -1119,8 +1052,8 @@ class system:
 
 class doublet(system):
     def __init__(self,
-                 material_crown=None,
-                 material_flint=None,
+                 material_crown: Optional[material] = None,
+                 material_flint: Optional[material] = None,
                  radius_crown: Optional[float] = None,
                  radius_flint: Optional[float] = None,
                  radius_interface: Optional[float] = None,
@@ -1201,10 +1134,10 @@ class surface:
     The geometry of the surface should be defined by the center, input_axis, and output_axis
     """
     def __init__(self,
-                 input_axis,
-                 output_axis,
-                 center,
-                 paraxial_center,
+                 input_axis: NDArray,
+                 output_axis: NDArray,
+                 center: NDArray,
+                 paraxial_center: NDArray,
                  aperture_rad: float,
                  is_aperture_stop: bool = False):
         """
@@ -1239,7 +1172,7 @@ class surface:
         self.aperture_rad = aperture_rad
         self.is_aperture_stop = is_aperture_stop
 
-    def get_normal(self, pts):
+    def get_normal(self, pts: NDArray):
         """
         Get normal value at pts. Should be implemented so if pass a ray instead of a point, will
         take the (xo, yo, zo) part and ignore the rest
@@ -1249,7 +1182,7 @@ class surface:
         """
         pass
 
-    def get_intersect(self, rays, material):
+    def get_intersect(self, rays: NDArray, material: material):
         """
         Find intersection points between rays and surface for rays propagating through a given material,
         and return resulting rays at intersection
@@ -1260,7 +1193,10 @@ class surface:
         """
         pass
 
-    def propagate(self, ray_array, material1, material2):
+    def propagate(self,
+                  ray_array: NDArray,
+                  material1: material,
+                  material2: material):
         """
         propagate rays througn the surface
 
@@ -1278,7 +1214,7 @@ class surface:
         """
         raise NotImplementedError()
 
-    def get_ray_transfer_matrix(self, n1, n2):
+    def get_ray_transfer_matrix(self, n1: float, n2: float):
         """
 
         :param n1:
@@ -1287,7 +1223,10 @@ class surface:
         """
         pass
 
-    def solve_img_eqn(self, s, n1, n2):
+    def solve_img_eqn(self,
+                      s: NDArray,
+                      n1: float,
+                      n2: float):
         """
         solve imaging equation where s is the object distance and s' is the image distance
 
@@ -1297,7 +1236,7 @@ class surface:
         :param s:
         :param n1:
         :param n2:
-        :return:
+        :return sp_x:
         """
         # todo: helper function for calculating seidel aberrations (not finished)
 
@@ -1313,7 +1252,7 @@ class surface:
 
         return sp_x
 
-    def is_pt_on_surface(self, pts,):
+    def is_pt_on_surface(self, pts: NDArray):
         """
         Test if a point is on surface
 
@@ -1322,7 +1261,7 @@ class surface:
         """
         pass
 
-    def draw(self, ax):
+    def draw(self, ax: Axes):
         """
         Draw surface on matplotlib axis
 
@@ -1333,7 +1272,10 @@ class surface:
 
 
 class refracting_surface(surface):
-    def propagate(self, ray_array, material1, material2):
+    def propagate(self,
+                  ray_array: NDArray,
+                  material1: material,
+                  material2: material) -> NDArray:
         """
         Given a set of rays, propagate them to the surface of this object and compute their refraction.
         Return the update ray array with these two new ray positions
@@ -1372,7 +1314,10 @@ class refracting_surface(surface):
 
 
 class reflecting_surface(surface):
-    def propagate(self, ray_array, material1, material2=None):
+    def propagate(self,
+                  ray_array: NDArray,
+                  material1: material,
+                  material2: Optional[material] = None) -> NDArray:
         """
         Given a set of rays, propagate them to the surface of this object and compute their refraction.
         Return the update ray array with these two new ray positions
@@ -1380,7 +1325,7 @@ class reflecting_surface(surface):
         :param ray_array: nsurfaces x nrays x 8
         :param material1:
         :param material2:
-        :return:
+        :return rays:
         """
         if ray_array.ndim == 1:
             ray_array = np.expand_dims(ray_array, axis=(0, 1))
@@ -1413,17 +1358,20 @@ class flat_surface(refracting_surface):
         self.normal = np.array(normal).squeeze()
         super().__init__(normal, normal, center, center, aperture_rad, is_aperture_stop)
 
-    def get_normal(self, pts):
+    def get_normal(self, pts: NDArray):
         pts = np.atleast_2d(pts)
         normal = np.atleast_2d(self.normal)
         return np.tile(normal, (pts.shape[0], 1))
 
-    def get_intersect(self, rays, material):
-        rays_int, ts = propagate_ray2plane(rays, self.normal, self.center, material, exclude_backward_propagation=True)
-
+    def get_intersect(self, rays: NDArray, material: material):
+        rays_int, ts = propagate_ray2plane(rays,
+                                           self.normal,
+                                           self.center,
+                                           material,
+                                           exclude_backward_propagation=True)
         return rays_int
 
-    def is_pt_on_surface(self, pts):
+    def is_pt_on_surface(self, pts: NDArray):
         pts = np.atleast_2d(pts)
         x = pts[:, 0]
         y = pts[:, 1]
@@ -1469,7 +1417,7 @@ class flat_surface(refracting_surface):
 
         return coeffs
 
-    def draw(self, ax):
+    def draw(self, ax: Axes):
         # take Y = 0 portion of surface
         y_hat = np.array([0, 1, 0])
         normal_proj = self.normal - self.normal.dot(y_hat) * y_hat
@@ -1498,22 +1446,19 @@ class plane_mirror(reflecting_surface):
         self.normal = np.array(normal).squeeze()
         super().__init__(normal, normal, center, center, aperture_rad, is_aperture_stop)
 
-    def get_normal(self, pts):
+    def get_normal(self, pts: NDArray):
         pts = np.atleast_2d(pts)
         normal = np.atleast_2d(self.normal)
         return np.tile(normal, (pts.shape[0], 1))
 
-    def get_intersect(self, rays, material):
-        """
-
-        """
+    def get_intersect(self, rays: NDArray, material: material):
         rays_int, ts = propagate_ray2plane(rays, self.normal, self.center, material)
         # exclude rays which will not intersect plane (but would have intersected in the past)
         rays_int[ts < 0] = np.nan
 
         return rays_int
 
-    def is_pt_on_surface(self, pts):
+    def is_pt_on_surface(self, pts: NDArray):
         pts = np.atleast_2d(pts)
         x = pts[:, 0]
         y = pts[:, 1]
@@ -1525,14 +1470,14 @@ class plane_mirror(reflecting_surface):
 
         return on_surface
 
-    def get_ray_transfer_matrix(self, n1, n2):
+    def get_ray_transfer_matrix(self, n1: float, n2: float):
         mat = np.array([[1, 0, 0, 0],
                         [0, -1, 0, 0],
                         [0, 0, 1, 0],
                         [0, 0, 0, -1]])
         return mat
 
-    def draw(self, ax):
+    def draw(self, ax: Axes):
         # take Y = 0 portion of surface
         y_hat = np.array([0, 1, 0])
         normal_proj = self.normal - self.normal.dot(y_hat) * y_hat
@@ -1566,7 +1511,11 @@ class spherical_surface(refracting_surface):
         super().__init__(input_axis, input_axis, center, paraxial_center, aperture_rad, is_aperture_stop)
 
     @classmethod
-    def get_on_axis(cls, radius, surface_z_position, aperture_rad, is_aperture_stop=False):
+    def get_on_axis(cls,
+                    radius: float,
+                    surface_z_position: float,
+                    aperture_rad: float,
+                    is_aperture_stop: bool = False):
         """
         Construct spherical surface from position on-optical axis, instead of center
         Think of this as an alternate constructor
@@ -1580,7 +1529,7 @@ class spherical_surface(refracting_surface):
         input_axis = (0, 0, 1)
         return cls(radius, [0, 0, surface_z_position + radius], aperture_rad, input_axis, is_aperture_stop)
 
-    def get_normal(self, pts):
+    def get_normal(self, pts: NDArray):
         """
         Return the outward facing normal if self.aperture_radius > 0, otherwise the inward facing normal
 
@@ -1591,7 +1540,7 @@ class spherical_surface(refracting_surface):
         normals = (pts - np.expand_dims(np.array(self.center), axis=0)) / self.radius
         return normals
 
-    def get_intersect(self, rays, material):
+    def get_intersect(self, rays: NDArray, material: material) -> NDArray:
         rays = np.atleast_2d(rays)
 
         # ray parameterized by (xo, yo, zo) + t * (dx, dy, dz)
@@ -1629,7 +1578,7 @@ class spherical_surface(refracting_surface):
 
         return rays_int
 
-    def is_pt_on_surface(self, pts):
+    def is_pt_on_surface(self, pts: NDArray) -> NDArray:
         """
         Check if point is on sphere surfaces
 
@@ -1667,7 +1616,7 @@ class spherical_surface(refracting_surface):
 
         return coeffs
 
-    def get_ray_transfer_matrix(self, n1, n2):
+    def get_ray_transfer_matrix(self, n1: float, n2: float) -> NDArray:
         # test if we are going from "inside the sphere" to "outside the sphere" i.e. ray is striking the concave side
         # or the other way
         pc_to_c = self.center - self.paraxial_center
@@ -1683,7 +1632,7 @@ class spherical_surface(refracting_surface):
                         [0,    0, 0,    0, 1]])
         return mat
 
-    def draw(self, ax):
+    def draw(self, ax: Axes):
         # todo: modify to allow arbitrary input axis
         theta_max = np.arcsin(self.aperture_rad / np.abs(self.radius))
         thetas = np.linspace(-theta_max, theta_max, 101)
@@ -1695,8 +1644,8 @@ class spherical_surface(refracting_surface):
 class perfect_lens(refracting_surface):
     def __init__(self,
                  focal_len: float,
-                 center,
-                 normal,
+                 center: NDArray,
+                 normal: NDArray,
                  alpha: float,
                  is_aperture_stop: bool = False):
         """
@@ -1719,13 +1668,13 @@ class perfect_lens(refracting_surface):
     def get_normal(self):
         pass
 
-    def get_intersect(self, rays, material):
+    def get_intersect(self, rays: NDArray, material: material) -> NDArray:
         rays_int, ts = propagate_ray2plane(rays, self.normal, self.center, material)
         with np.errstate(invalid="ignore"):
             rays_int[ts < 0] = np.nan
         return rays_int
 
-    def is_pt_on_surface(self, pts):
+    def is_pt_on_surface(self, pts: NDArray) -> NDArray:
         pts = np.atleast_2d(pts)
         x = pts[:, 0]
         y = pts[:, 1]
@@ -1737,7 +1686,10 @@ class perfect_lens(refracting_surface):
 
         return on_surface
 
-    def propagate(self, rays, material1, material2):
+    def propagate(self,
+                  rays: NDArray,
+                  material1: material,
+                  material2: material) -> NDArray:
         """
         Given a set of rays, propagate them to the surface of this object and compute their refraction.
         Return the update ray array with these two new ray positions
@@ -1759,7 +1711,7 @@ class perfect_lens(refracting_surface):
         Note: there will be a positional discontinuity at the surface of the lens. For example, given a beam parallel
         to the optical axis incident at height h, let's compute the height after the lens, determined by the angle
         which the beam focuses. To see this, note
-        We known theta = sin^(-1)(x / fl) and the
+        We know theta = sin^(-1)(x / fl) and the
         new height = f*tan(theta) = f * h / sqrt(fl^2-h^2) ~ x + 0.5 * x^3 / fl^2 + ...
         so the heights only match to first order
 
@@ -1804,13 +1756,10 @@ class perfect_lens(refracting_surface):
         # get the three surfaces we will need in our calculation: front focal plane (i.e. before the lens),
         # lens surface, back focal plane (i.e. after the lens)
         # #####################################
-        # todo: have to somehow handle the fact these planes depend on the wavelength/index of refraction
-        front_focal_pts = np.expand_dims(self.center, axis=0) - np.expand_dims(self.normal, axis=0) * self.focal_len * np.expand_dims(material1.n(wls), axis=1)
-        # front_focal_plane = flat_surface(front_focal_pt, self.normal, self.aperture_rad)
-
-        # lens_plane = flat_surface(self.center, self.normal, np.inf)
-
-        back_focal_pts = np.expand_dims(self.center, axis=0) + np.expand_dims(self.normal, axis=0) * self.focal_len * np.expand_dims(material2.n(wls), axis=1)
+        front_focal_pts = (np.expand_dims(self.center, axis=0) -
+                           np.expand_dims(self.normal, axis=0) * self.focal_len * np.expand_dims(material1.n(wls), axis=1))
+        back_focal_pts = (np.expand_dims(self.center, axis=0) +
+                          np.expand_dims(self.normal, axis=0) * self.focal_len * np.expand_dims(material2.n(wls), axis=1))
 
         # #####################################
         # find position rays intersect the object plane (front focal plane)
@@ -1876,7 +1825,7 @@ class perfect_lens(refracting_surface):
                                np.expand_dims(cos_t2, axis=1) * np.expand_dims(self.normal, axis=0)
 
         # #####################################
-        # exclude points which are outside of the NA of the lens
+        # exclude points which are outside the NA of the lens
         # #####################################
         with np.errstate(invalid="ignore"):
             input_angle_too_steep = np.abs(sin_t1) > np.sin(self.alpha)
@@ -1924,15 +1873,15 @@ class perfect_lens(refracting_surface):
 
         return rays_out
 
-    def get_ray_transfer_matrix(self, n1, n2):
-        mat = np.array([[1,    0, 0,    0, 0],
-                        [-1/self.focal_len, 1, 0,    0, 0],
-                        [0,    0, 1,    0, 0],
-                        [0,    0, -1/self.focal_len, 1, 0],
-                        [0,    0, 0,    0, 1]])
+    def get_ray_transfer_matrix(self, n1: float, n2: float) -> NDArray:
+        mat = np.array([[1,                 0, 0,                 0, 0],
+                        [-1/self.focal_len, 1, 0,                 0, 0],
+                        [0,                 0, 1,                 0, 0],
+                        [0,                 0, -1/self.focal_len, 1, 0],
+                        [0,                 0, 0,                 0, 1]])
         return mat
 
-    def draw(self, ax):
+    def draw(self, ax: Axes):
         # take Y = 0 portion of surface
         y_hat = np.array([0, 1, 0])
         normal_proj = self.normal - self.normal.dot(y_hat) * y_hat
@@ -1947,185 +1896,3 @@ class perfect_lens(refracting_surface):
         pts = np.expand_dims(self.center, axis=0) + np.expand_dims(ts, axis=1) * np.expand_dims(dv, axis=0)
 
         ax.plot(pts[:, 2], pts[:, 0], 'k')
-
-
-# ################################################
-# optical materials
-# ################################################
-class material:
-    """
-    Represent materials with wavelength-dependent index of refraction
-
-     for information about various materials, see https://refractiveindex.info/ or https://www.schott.com
-     abbe number vd = (nd - 1) / (nf - nc)
-     vd > 50 = crown glass, otherwise flint glass
-    """
-
-    # helium d-line
-    wd = 0.5876
-    # hydrogen F-line
-    wf = 0.4861
-    # hydrogen c-line
-    wc = 0.6563
-    # abbe number
-    vd = None
-
-    def __init__(self, b_coeffs, c_coeffs):
-        """
-        Initialize material using Sellmeier dispersion formula coefficients
-
-        :param b_coeffs:
-        :param c_coeffs:
-        """
-        # Sellmeier dispersion formula coefficients
-        self.b1, self.b2, self.b3 = np.array(b_coeffs).squeeze()
-        self.c1, self.c2, self.c3 = np.array(c_coeffs).squeeze()
-
-        # abbe number (measure of dispersion)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            self.vd = (self.n(self.wd) - 1) / (self.n(self.wf) - self.n(self.wc))
-
-    def n(self, wavelength: float):
-        """
-        compute index of refraction from Sellmeier dispersion formula. To use another method with a specific material,
-        override this function the derived class
-        see https://www.schott.com/d/advanced_optics/02ffdb0d-00a6-408f-84a5-19de56652849/1.2/tie_29_refractive_index_and_dispersion_eng.pdf
-
-        :param wavelength:
-        :return refractive index:
-        """
-        val = self.b1 * wavelength ** 2 / (wavelength ** 2 - self.c1) + \
-              self.b2 * wavelength ** 2 / (wavelength ** 2 - self.c2) + \
-              self.b3 * wavelength ** 2 / (wavelength ** 2 - self.c3)
-        return np.sqrt(val + 1)
-
-
-class vacuum(material):
-    def __init__(self):
-        bs = [0., 0., 0.]
-        cs = [0., 0., 0.]
-        super(vacuum, self).__init__(bs, cs)
-
-
-class constant(material):
-    """
-    Material with a constant index of refraction versus wavelength
-    """
-    def __init__(self, n):
-        self._n = float(n)
-        self.b1 = None
-        self.b2 = None
-        self.b3 = None
-        self.c1 = None
-        self.c2 = None
-        self.c3 = None
-
-    def n(self, wavelength):
-        if isinstance(wavelength, float):
-            ns = self._n
-        else:
-            wavelength = np.atleast_1d(np.array(wavelength))
-            ns = np.ones(wavelength.shape) * self._n
-
-        return ns
-
-
-class fused_silica(material):
-    def __init__(self):
-        bs = [0.6961663, 0.4079426, 0.8974794]
-        cs = [0.0684043**2, 0.1162414**2, 9.896161**2]
-        super(fused_silica, self).__init__(bs, cs)
-
-
-# crown glasses (low dispersion, low refractive index)
-class bk7(material):
-    """
-    BK7 is a common crown glass
-    """
-    def __init__(self):
-        bs = [1.03961212, 0.231792344, 1.01046945]
-        cs = [0.00600069867, 0.0200179144, 103.560653]
-        super(bk7, self).__init__(bs, cs)
-
-
-class nbak4(material):
-    """
-    nbak4 is a common crown glass
-    """
-    def __init__(self):
-        bs = [1.28834642, 0.132817724, 0.945395373]
-        cs = [0.00779980626, 0.0315631177, 105.965875]
-        super(nbak4, self).__init__(bs, cs)
-
-class nbaf10(material):
-    """
-    nbaf10 is a common crown glass
-    """
-    def __init__(self):
-        bs = [1.5851495, 0.143559385, 1.08521269]
-        cs = [0.00926681282, 0.0424489805, 105.613573]
-        super(nbaf10, self).__init__(bs, cs)
-
-
-class nlak22(material):
-    """
-    https://www.schott.com/shop/advanced-optics/en/Optical-Glass/N-LAK22/c/glass-N-LAK22
-    """
-    def __init__(self):
-        bs = [1.14229781, 0.535138441, 1.040883850]
-        cs = [0.00585778594, 0.0198546147, 100.8340170]
-        super(nlak22, self).__init__(bs, cs)
-
-
-# flint glasses (high dispersion, high refractive index)
-class sf10(material):
-    """
-    sf10 is a flint glass
-    """
-    def __init__(self):
-        bs = [1.62153902, 0.256287842, 1.64447552]
-        cs = [0.0122241457, 0.0595736775, 147.468793]
-        super(sf10, self).__init__(bs, cs)
-
-
-class nsf6(material):
-    """
-    nsf6 is a flint glass
-    https://www.schott.com/shop/advanced-optics/en/Optical-Glass/N-SF6/c/glass-N-SF6
-    """
-    def __init__(self):
-        bs = [1.77931763, 0.338149866, 2.087344740]
-        cs = [0.01337141820, 0.0617533621, 174.0175900]
-        super(nsf6, self).__init__(bs, cs)
-
-
-class sf6(material):
-    """
-    sf6 is a flint glass
-    https://www.schott.com/shop/advanced-optics/en/Optical-Glass/SF6/c/glass-SF6
-    """
-    def __init__(self):
-        bs = [1.72448482, 0.390104889, 1.045728580]
-        cs = [0.01348719470, 0.0569318095, 118.5571850]
-        super(sf6, self).__init__(bs, cs)
-
-
-class nsf6ht(material):
-    """
-    flint glass
-    https://www.schott.com/shop/advanced-optics/en/Optical-Glass/N-SF6HT/c/glass-N-SF6HT
-    """
-    def __init__(self):
-        bs = [1.77931763, 0.338149866, 2.087344740]
-        cs = [0.01337141820, 0.0617533621, 174.0175900]
-        super(nsf6ht, self).__init__(bs, cs)
-
-
-class sf2(material):
-    """
-    flint glass
-    """
-    def __init__(self):
-        bs = [1.40301821, 0.231767504, 0.939056586]
-        cs = [0.0105795466, 0.0493226978, 112.405955]
-        super(sf2, self).__init__(bs, cs)
