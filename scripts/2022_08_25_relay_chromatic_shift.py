@@ -4,11 +4,10 @@ ACT508-100-B
 
 at 532nm and 785nm
 """
-import matplotlib
-matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import numpy as np
 import raytrace.raytrace as rt
+from raytrace.materials import Vacuum, Nlak22, Nsf6, Nsf6ht
 
 w1 = 0.785 # um
 w2 = 0.532
@@ -44,52 +43,31 @@ z180 = 10
 z100 = z180 + (t180c + t180f) + 264.85
 zend = z100 + 30
 
-surfaces = \
-           [# AC508-180-AB-ML. Infinity focus to the left
-            rt.spherical_surface.get_on_axis(r180c, z180, radius),
-            rt.spherical_surface.get_on_axis(r180i, z180 + t180c, radius),
-            rt.spherical_surface.get_on_axis(r180f, z180 + t180c + t180f, radius),
+system = rt.System([# AC508-180-AB-ML. Infinity focus to the left
+            rt.SphericalSurface.get_on_axis(r180c, z180, radius),
+            rt.SphericalSurface.get_on_axis(r180i, z180 + t180c, radius),
+            rt.SphericalSurface.get_on_axis(r180f, z180 + t180c + t180f, radius),
             # AC508-100-B-ML. Infinity focus to the right
-            rt.spherical_surface.get_on_axis(-r100f, z100, radius),
-            rt.spherical_surface.get_on_axis(-r100i, z100 + t100f, radius),
-            rt.spherical_surface.get_on_axis(-r100c, z100 + t100f + t100c, radius),
+            rt.SphericalSurface.get_on_axis(-r100f, z100, radius),
+            rt.SphericalSurface.get_on_axis(-r100i, z100 + t100f, radius),
+            rt.SphericalSurface.get_on_axis(-r100c, z100 + t100f + t100c, radius),
             # final focal plane
-            rt.flat_surface([0, 0, zend], [0, 0, 1], radius)
-            ]
-
-materials = [rt.vacuum(),
-             rt.nlak22(), rt.nsf6(), rt.vacuum(), #AC508-180-AB-ML
-             rt.nsf6ht(), rt.nlak22(), rt.vacuum(), #AC508-100-B-ML
-             rt.vacuum()]
-
-ns1 = [m.n(w1) for m in materials]
-ns2 = [m.n(w2) for m in materials]
-
-# todo: these paraxial calculations still not working
-rt1_w1 = rt.compute_paraxial_matrix(surfaces[:3], ns1[:4])
-rt2_w1 = rt.compute_paraxial_matrix(surfaces[3:6], ns1[3:7])
-d1, _ = rt.find_paraxial_collimated_distance(rt1_w1, rt2_w1, 1)
-fs1 = np.array([[1, d1], [1, 0]])
-test = rt2_w1[:2, :2].dot(fs1.dot(rt1_w1[:2, :2]))
-
-rt1_w2 = rt.compute_paraxial_matrix(surfaces[:3], ns2[:4])
-rt2_w2 = rt.compute_paraxial_matrix(surfaces[3:6], ns2[3:7])
-d2, _ = rt.find_paraxial_collimated_distance(rt1_w2, rt2_w2, 1)
-
-print(f"Collimated at {w1 * 1e3:.1f}nm for lens distance of {d1:.5f}mm")
-print(f"Collimated at {w2 * 1e3:.1f}nm for lens distance of {d2:.5f}mm")
-print(f"Lens shift is {d1 - d2:.5f}mm")
-
+            rt.FlatSurface([0, 0, zend], [0, 0, 1], radius)
+            ],
+            [Nlak22(), Nsf6(), Vacuum(),  #AC508-180-AB-ML
+            Nsf6ht(), Nlak22(), Vacuum(),  #AC508-100-B-ML
+             ]
+            )
 
 # do ray tracing
 rays1 = rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, w1)
 rays2 = rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, w2)
 
-rays1 = rt.ray_trace_system(rays1, surfaces, materials)
-rays2 = rt.ray_trace_system(rays2, surfaces, materials)
+rays1 = system.ray_trace(rays1, Vacuum(), Vacuum())
+rays2 = system.ray_trace(rays2, Vacuum(), Vacuum())
 
-figh, ax = rt.plot_rays(rays1, surfaces, colors="r", label=f"{w1 * 1e3:.1f}nm", figsize=(16, 8))
-rt.plot_rays(rays2, surfaces, colors="g", label=f"{w2 * 1e3:.1f}nm", ax=ax)
+figh, ax = system.plot(rays1, colors="r", label=f"{w1 * 1e3:.1f}nm", figsize=(16, 8))
+system.plot(rays2, colors="g", label=f"{w2 * 1e3:.1f}nm", ax=ax)
 ax.legend()
 plt.show()
 

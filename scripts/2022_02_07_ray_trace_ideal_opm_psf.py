@@ -68,19 +68,19 @@ p_pupil_o3 = p_o3 + f3 * o3_normal
 p_t3 = p_o3 + (f3 + f_tube_lens_3) * o3_normal
 p_imag = p_t3 + f_tube_lens_3 * o3_normal
 
-surfaces = [rt.perfect_lens(f1, [0, 0, p_o1], [0, 0, 1], alpha1),  # O1
-            rt.flat_surface([0, 0, p_pupil_o1], [0, 0, 1], n1*f1), # O1 pupil
-            rt.perfect_lens(f_tube_lens_1, [0, 0, p_t1], [0, 0, 1], alpha1),  # tube lens #1
-            rt.perfect_lens(f_tube_lens_2, [0, 0, p_t2], [0, 0, 1], alpha2),  # tube lens #2
-            rt.flat_surface([0, 0, p_pupil_o2], [0, 0, 1], n2*f2), # pupil of O2
-            rt.perfect_lens(f2, [0, 0, p_o2], [0, 0, 1], alpha2),  # O2
-            rt.flat_surface([0, 0, p_remote_focus], o3_normal, r2), # snouty nose cone
-            rt.perfect_lens(f3, p_o3, o3_normal, alpha3),  # O3
-            rt.flat_surface(p_pupil_o3, o3_normal, r3), # pupil of 03
-            rt.perfect_lens(f_tube_lens_3, p_t3, o3_normal, alpha3),  # tube lens #3
-            rt.flat_surface(p_imag, o3_normal, aperture_rad)]
-materials = [rt.constant(n1), rt.vacuum(), rt.vacuum(), rt.vacuum(), rt.vacuum(), rt.vacuum(),
-             rt.constant(n2), rt.constant(n3), rt.vacuum(), rt.vacuum(), rt.vacuum(), rt.vacuum()]
+surfaces = [rt.PerfectLens(f1, [0, 0, p_o1], [0, 0, 1], alpha1),  # O1
+            rt.FlatSurface([0, 0, p_pupil_o1], [0, 0, 1], n1 * f1),  # O1 pupil
+            rt.PerfectLens(f_tube_lens_1, [0, 0, p_t1], [0, 0, 1], alpha1),  # tube lens #1
+            rt.PerfectLens(f_tube_lens_2, [0, 0, p_t2], [0, 0, 1], alpha2),  # tube lens #2
+            rt.FlatSurface([0, 0, p_pupil_o2], [0, 0, 1], n2 * f2),  # pupil of O2
+            rt.PerfectLens(f2, [0, 0, p_o2], [0, 0, 1], alpha2),  # O2
+            rt.FlatSurface([0, 0, p_remote_focus], o3_normal, r2),  # snouty nose cone
+            rt.PerfectLens(f3, p_o3, o3_normal, alpha3),  # O3
+            rt.FlatSurface(p_pupil_o3, o3_normal, r3),  # pupil of 03
+            rt.PerfectLens(f_tube_lens_3, p_t3, o3_normal, alpha3),  # tube lens #3
+            rt.FlatSurface(p_imag, o3_normal, aperture_rad)]
+materials = [rt.Constant(n1), rt.Vacuum(), rt.Vacuum(), rt.Vacuum(), rt.Vacuum(), rt.Vacuum(),
+             rt.Constant(n2), rt.Constant(n3), rt.Vacuum(), rt.Vacuum(), rt.Vacuum(), rt.Vacuum()]
 
 # setup grid in 03 pupil
 dxy = 5e-3
@@ -153,7 +153,7 @@ for ii in range(npos):
 
     nb = np.cross(nc, na)
     nb = nb / np.linalg.norm(nb)
-    # surface center
+    # Surface center
     c = surfaces[-3].center
 
     # x-like vectors

@@ -9,7 +9,7 @@ authors = [
     {name = "Peter T. Brown", email="ptbrown1729@gmail.com"}
 ]
 license = {file = "LICENSE"}
-keywords = ["ray tracing"]
+keywords = ["ray tracing", "optics"]
 description = "A simple python ray tracing package"
 readme = "README.md"
 classifiers = [
@@ -20,8 +20,8 @@ dependencies = ["numpy",
                 "matplotlib",
                 ]
 
-[tool.setuptools]
-packages = ["raytrace"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.setuptools.dynamic]
 version = {attr = "raytrace.__version__"}

@@ -1,11 +1,10 @@
 """
 Test spherical aberration for collimated beam incident on plano-convex lens
 """
-import matplotlib
-matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import numpy as np
 import raytrace.raytrace as rt
+from raytrace.materials import Vacuum, Constant
 
 # physical data
 wavelength = 0.5 # um
@@ -23,16 +22,16 @@ dz = 5
 nrays = 101 # should be odd
 
 # construct lens
-singlet = rt.system([rt.flat_surface([0, 0, 0], [0, 0, 1], aperture_radius),
-                     rt.spherical_surface.get_on_axis(-rad_curv, t0 + t1, aperture_radius),
-                     rt.flat_surface([0, 0, t0 + t1], [0, 0, 1], aperture_radius)],
-                    [rt.constant(n), rt.vacuum()])
+singlet = rt.System([rt.FlatSurface([0, 0, 0], [0, 0, 1], aperture_radius),
+                     rt.SphericalSurface.get_on_axis(-rad_curv, t0 + t1, aperture_radius),
+                     rt.FlatSurface([0, 0, t0 + t1], [0, 0, 1], aperture_radius)],
+                    [Constant(n), Vacuum()])
 
 # generate collimated beam
 rays = rt.get_collimated_rays([0, 0, -dz], aperture_radius, nrays, wavelength)
 
 # ray trace
-rays = singlet.ray_trace(rays, rt.vacuum(), rt.vacuum())
+rays = singlet.ray_trace(rays, Vacuum(), Vacuum())
 # plot rays
 singlet.plot(rays)
 

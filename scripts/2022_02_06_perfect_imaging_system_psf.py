@@ -1,5 +1,5 @@
 """
-Numerically compute the point-spread function of a perfect imaging system,
+Numerically compute the point-spread function of a perfect imaging System,
 i.e. one only limited by the objective lens NA
 """
 import time
@@ -8,6 +8,7 @@ from numpy import fft
 from scipy.interpolate import griddata
 import scipy.special
 import raytrace.raytrace as rt
+from raytrace.materials import Vacuum, Constant
 # plotting
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
@@ -35,12 +36,13 @@ fwhm_um = wavelength / na_obj / 2 / 1e-3
 radial_zero_um = 0.61 * wavelength / na_obj / 1e-3
 axial_zero_um = 2 * wavelength * n1 / na_obj ** 2
 
-surfaces = [rt.perfect_lens(f1, [0, 0, n1*f1], [0, 0, 1], alpha_obj),  # O1
-            rt.flat_surface([0, 0, n1*f1 + f1], [0, 0, 1], 4*r1),  # O1 pupil
-            rt.perfect_lens(f_tube_lens, [0, 0, n1*f1 + f1 + f_tube_lens], [0, 0, 1], na_img),  # tube lens #1
-            rt.flat_surface([0, 0, n1*f1 + f1 + 2*f_tube_lens], [0, 0, 1], r1)  # imaging plane
-            ]
-materials = [rt.constant(n1), rt.vacuum(), rt.vacuum(), rt.vacuum(), rt.vacuum()]
+system = rt.System([rt.PerfectLens(f1, [0, 0, n1 * f1], [0, 0, 1], alpha_obj),  # O1
+                    rt.FlatSurface([0, 0, n1 * f1 + f1], [0, 0, 1], 4 * r1),  # O1 pupil
+                    rt.PerfectLens(f_tube_lens, [0, 0, n1 * f1 + f1 + f_tube_lens], [0, 0, 1], na_img),  # tube lens #1
+                    rt.FlatSurface([0, 0, n1 * f1 + f1 + 2 * f_tube_lens], [0, 0, 1], r1)  # imaging plane
+                    ],
+                   [Vacuum(), Vacuum(), Vacuum()]
+                   )
 
 # define grid in pupil
 # dxy = 10e-3
@@ -83,7 +85,7 @@ for ii in range(nz):
     rays = rt.get_ray_fan([0, 0, zs[ii]], alpha_obj, 101, wavelength, nphis=51)
     # rays = rt.get_collimated_rays([dx, dy, dz], 1, 101, wavelength=wavelength, nphis=51,
     #                               normal=[0, np.sin(10*np.pi/180), np.cos(10*np.pi/180)])
-    rays = rt.ray_trace_system(rays, surfaces, materials)
+    rays = system.ray_trace(rays, Constant(n1), Vacuum())
 
     # beam in pupil
     ind = 4
@@ -150,7 +152,7 @@ for ii in range(nz):
     # plot ray trace surfaces
     # ##################################
     if plot_rays and np.abs(zs[ii]) < 1e-12:
-        rt.plot_rays(rays, surfaces)
+        system.plot_rays(rays)
         ax = plt.gca()
 print("")
 

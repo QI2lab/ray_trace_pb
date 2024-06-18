@@ -2,8 +2,8 @@
 Ray trace "thin lens" and calculate Seidel aberration coefficients
 """
 import numpy as np
-import matplotlib.pyplot as plt
 import raytrace.raytrace as rt
+from raytrace.materials import Vacuum, Sf2, Bk7
 
 wavelength = 0.532
 
@@ -16,36 +16,31 @@ r200i = 92.1
 r200c = -106.2
 bfl200 = 190.6
 efl200 = 200
-surfaces = [
-    rt.flat_surface([0, 0, 0], [0, 0, 1], aperture_radius),
-    # ACT508-200-A-ML
-    rt.spherical_surface.get_on_axis(r200f, lens_start-0.1, aperture_radius, is_aperture_stop=True),
-    rt.spherical_surface.get_on_axis(r200i, lens_start + t200f, aperture_radius),
-    rt.spherical_surface.get_on_axis(r200c, lens_start + t200c + t200f, aperture_radius),
-    #rt.flat_surface([0, 0, lens_start + t200c + t200f + 0], [0, 0, 1], aperture_radius)
-    ]
 
-materials = [rt.vacuum(),
-      rt.vacuum(), rt.sf2(), rt.bk7(), rt.vacuum(),
-      ]
+system = rt.System([rt.FlatSurface([0, 0, 0], [0, 0, 1], aperture_radius),
+                    # ACT508-200-A-ML
+                    rt.SphericalSurface.get_on_axis(r200f, lens_start - 0.1, aperture_radius, is_aperture_stop=True),
+                    rt.SphericalSurface.get_on_axis(r200i, lens_start + t200f, aperture_radius),
+                    rt.SphericalSurface.get_on_axis(r200c, lens_start + t200c + t200f, aperture_radius),
+                    #rt.FlatSurface([0, 0, lens_start + t200c + t200f + 0], [0, 0, 1], aperture_radius)
+                    ],
+                   [Vacuum(), Sf2(), Bk7()]
+                   )
 
 # auto-focus
-surfaces, materials = rt.auto_focus(surfaces, materials, wavelength, mode="paraxial-focused")
-
-abcd = rt.compute_paraxial_matrix(surfaces, [m.n(wavelength) for m in materials], 400)
+f = system.auto_focus(wavelength, mode="paraxial-focused")
+abcd = system.get_ray_transfer_matrix(wavelength, Vacuum(), Vacuum())
 
 # ray trace
 nrays = 101
 rays = rt.get_ray_fan([0, 0, 0], 1*np.pi/180, nrays, wavelength)
-rays = rt.ray_trace_system(rays, surfaces, materials)
-
-# plot results
-rt.plot_rays(rays, surfaces)
+rays = system.ray_trace(rays, Vacuum(), Vacuum())
+system.plot(rays)
 
 # test aberrations
-abs = rt.compute_third_order_seidel(surfaces, materials, wavelength)
+abs = system.compute_third_order_seidel(wavelength)
 for ii in range(abs.shape[0]):
-    print(("surface %02d: " + 5 * "%+0.5e, ") % ((ii,) + tuple(abs[ii])))
+    print(("Surface %02d: " + 5 * "%+0.5e, ") % ((ii,) + tuple(abs[ii])))
 print("total     : " + 5 * "%+0.5e, " % tuple(np.sum(abs, axis=0)))
 
 # compare ray trace with ABCD

@@ -2,13 +2,12 @@
 Test that perfect lens gives correct phase values
 """
 import numpy as np
-import matplotlib
-matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import raytrace.raytrace as rt
+from raytrace.materials import Constant
 
 # #########################
-# define optical system
+# define optical System
 # #########################
 wavelength = 0.785
 aperture = 10
@@ -18,15 +17,12 @@ f = 4
 na = 1
 alpha = np.arcsin(na / n1)
 
-surfaces = [rt.flat_surface([0, 0, 0], [0, 0, 1], aperture),
-            rt.perfect_lens(f, [0, 0, n1 * f], [0, 0, 1], alpha),
-            rt.flat_surface([0, 0, n1*f + n2*f], [0, 0, 1], aperture)
-            ]
-
-materials = [rt.constant(n1),
-             rt.constant(n1),
-             rt.constant(n2),
-             rt.constant(n2)]
+system = rt.System([rt.FlatSurface([0, 0, 0], [0, 0, 1], aperture),
+            rt.PerfectLens(f, [0, 0, n1 * f], [0, 0, 1], alpha),
+            rt.FlatSurface([0, 0, n1 * f + n2 * f], [0, 0, 1], aperture)
+            ],
+             [Constant(n1),Constant(n2)]
+                   )
 
 # #########################
 # define rays
@@ -37,11 +33,10 @@ rays = rt.get_collimated_rays([0, 0, -1], 3, nrays, wavelength,
                               normal=[np.sin(angle), 0, np.cos(angle)])
 
 # #########################
-# ray trace system
+# ray trace System
 # #########################
-rays_out = rt.ray_trace_system(rays, surfaces, materials)
-
-rt.plot_rays(rays_out, surfaces)
+rays_out = system.ray_trace(rays, Constant(n1), Constant(n2))
+system.plot(rays_out)
 
 # #########################
 # plot phase information
@@ -59,12 +54,12 @@ ax.plot(h1, phi_expected + rays_out[1, nrays//2, 6], 'r')
 ax.plot(h1, rays_out[1, :, -2], 'bx')
 
 ax = plt.subplot(1, 3, 2)
-ax.set_title("phase versus height at first lens surface")
+ax.set_title("phase versus height at first lens Surface")
 ax.plot(h1, phi_expected + rays_out[3, nrays//2, 6], 'r')
 ax.plot(h1, rays_out[3, :, -2], 'bx')
 
 ax = plt.subplot(1, 3, 3)
-ax.set_title("phase versus height at final surface")
+ax.set_title("phase versus height at final Surface")
 ax.plot(h1, rays_out[-1, :, -2], 'bx')
 
 plt.show()

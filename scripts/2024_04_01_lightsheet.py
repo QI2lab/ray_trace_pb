@@ -6,7 +6,7 @@ import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import raytrace.raytrace as rt
-from raytrace.materials import constant
+from raytrace.materials import Constant
 from pathlib import Path
 import zarr
 
@@ -76,65 +76,65 @@ for ii, rad_curv in enumerate(rad_curvs):
                                         settings["wavelength"]
                                         )
 
-    etl = rt.system([rt.flat_surface([0, 0, 0],
-                                     [0, 0, 1],
-                                     settings["aperture_radius_etl"]),
-                     rt.spherical_surface.get_on_axis(-rad_curv,
-                                                      t_center,
-                                                      settings["aperture_radius_etl"]),
+    etl = rt.System([rt.FlatSurface([0, 0, 0],
+                                    [0, 0, 1],
+                                    settings["aperture_radius_etl"]),
+                     rt.SphericalSurface.get_on_axis(-rad_curv,
+                                                     t_center,
+                                                     settings["aperture_radius_etl"]),
                      ],
-                     materials=[constant(settings["n_etl"])],
+                    materials=[Constant(settings["n_etl"])],
                     names="etl")
 
-    l1 = rt.system([rt.perfect_lens(settings["f1"],
-                                     [0, 0, 0],
-                                     [0, 0, 1],
-                                     alpha=np.arcsin(0.1))],
+    l1 = rt.System([rt.PerfectLens(settings["f1"],
+                                   [0, 0, 0],
+                                   [0, 0, 1],
+                                   alpha=np.arcsin(0.1))],
                    [],
                    names="l1"
-                    )
+                   )
 
-    l2 = rt.system([rt.perfect_lens(settings["f2"],
-                                     [0, 0, 0],
-                                     [0, 0, 1],
-                                     alpha=np.arcsin(0.1))],
+    l2 = rt.System([rt.PerfectLens(settings["f2"],
+                                   [0, 0, 0],
+                                   [0, 0, 1],
+                                   alpha=np.arcsin(0.1))],
                    [],
                    names="l2"
                    )
 
-    obj = rt.system([rt.perfect_lens(settings["fobj"],
-                                     [0, 0, 0],
-                                     [0, 0, 1],
-                                     alpha=np.arcsin(0.3))],
-                   [],
+    obj = rt.System([rt.PerfectLens(settings["fobj"],
+                                    [0, 0, 0],
+                                    [0, 0, 1],
+                                    alpha=np.arcsin(0.3))],
+                    [],
                     names="obj"
                     )
 
-    cglass = rt.system([rt.flat_surface([0, 0, 0],
-                                        [0, 0, 1],
-                                        settings["aperture_radius"]),
-                        rt.flat_surface([0, 0, settings["t_coverglass"]],
-                                        [0, 0, 1],
-                                        settings["aperture_radius"]),
-                        rt.flat_surface([0, 0, 30],
-                                        [0, 0, 1],
-                                        settings["aperture_radius"])
+    cglass = rt.System([rt.FlatSurface([0, 0, 0],
+                                       [0, 0, 1],
+                                       settings["aperture_radius"]),
+                        rt.FlatSurface([0, 0, settings["t_coverglass"]],
+                                       [0, 0, 1],
+                                       settings["aperture_radius"]),
+                        rt.FlatSurface([0, 0, 30],
+                                       [0, 0, 1],
+                                       settings["aperture_radius"])
                         ],
-                        [constant(settings["n_coverglass"]),
-                         constant(settings["n_immersion"])],
+                       [Constant(settings["n_coverglass"]),
+                        Constant(settings["n_immersion"])],
                        "coverglass")
 
 
-    osys = etl.concatenate(l1, rt.vacuum(), settings["f1"] - (t_center - settings["t_edge"]))
-    osys = osys.concatenate(l2, rt.vacuum(), settings["f1"] + settings["f2"])
-    osys = osys.concatenate(obj, rt.vacuum(), settings["f2"] + settings["fobj"])
-    osys = osys.concatenate(cglass, rt.vacuum(), settings["dz_coverglass"])
+    osys = etl.concatenate(l1, rt.Vacuum(), settings["f1"] - (t_center - settings["t_edge"]))
+    osys = osys.concatenate(l2, rt.Vacuum(), settings["f1"] + settings["f2"])
+    osys = osys.concatenate(obj, rt.Vacuum(), settings["f2"] + settings["fobj"])
+    osys = osys.concatenate(cglass, rt.Vacuum(), settings["dz_coverglass"])
 
     # ray trace
-    rays = osys.ray_trace(rays_start, rt.vacuum(), rt.vacuum())
+    rays = osys.ray_trace(rays_start, rt.Vacuum(), rt.Vacuum())
     z.rays[ii] = rays
 
-    # plot optical system
+    # plot optical System
     desc_str = f"f={focal_lens_mm[ii]:.1f}mm_r={rad_curv:.1f}mm_dpt={dpt[ii]:.1f}"
     figh, ax = osys.plot(rays, figsize=(20, 15))
     figh.suptitle(desc_str)

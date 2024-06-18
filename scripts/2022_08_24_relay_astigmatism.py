@@ -1,11 +1,10 @@
 """
 Test amount of astigmatism introduced by off-axis lens
 """
-import matplotlib
-matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import numpy as np
 import raytrace.raytrace as rt
+from raytrace.materials import Vacuum, Constant, Nlak22, Nsf6, Nsf6ht
 
 wavelength = 0.785 # um
 nrays = 19 # must be odd
@@ -55,38 +54,30 @@ z300 = z100 + (t100c + t100f) + bfl100 + efl300
 zend = z300 + (t300c + t300f) + bfl300
 # zend = 998.579
 
-surfaces = \
-           [# AC508-180-AB-ML. Infinity focus to the left
-            rt.spherical_surface(r180c, [offset, 0, z180 + np.abs(r180c)], radius),
-            rt.spherical_surface(r180i, [offset, 0, z180 + t180c - np.abs(r180i)], radius),
-            rt.spherical_surface(r180f, [offset, 0, z180 + t180c + t180f - np.abs(r180f)], radius),
-            # rt.spherical_surface.get_on_axis(r180c, z180, radius),
-            # rt.spherical_surface.get_on_axis(r180i, z180 + t180c, radius),
-            # rt.spherical_surface.get_on_axis(r180f, z180 + t180c + t180f, radius),
-            # AC508-100-B-ML. Infinity focus to the right
-            rt.spherical_surface(-r100f, [offset, 0, z100 + np.abs(r100f)], radius),
-            rt.spherical_surface(-r100i, [offset, 0, z100 + t100f + np.abs(r100i)], radius),
-            rt.spherical_surface(-r100c, [offset, 0, z100 + t100f + t100c - np.abs(r100c)], radius),
-            # AC508-300-AB-ML. Infinity focus to the left
-            rt.spherical_surface.get_on_axis(r300c, z300, radius),
-            rt.spherical_surface.get_on_axis(r300i, z300 + t300c, radius),
-            rt.flat_surface([0, 0, z300 + t300c + t300f], [0, 0, 1], radius),
-            # rt.spherical_surface.get_on_axis(r300f, z300 + t300c + t300f, radius),
-            # final focal plane
-            rt.flat_surface([0, 0, zend], [0, 0, 1], radius)
-            ]
-
-# surface materials
-nlak22 = rt.nlak22()
-nsf6 = rt.nsf6()
-nsf6ht = rt.nsf6ht()
-
-materials = [rt.constant(1),
-             rt.nlak22(), rt.nsf6(), rt.constant(1), #AC508-180-AB-ML
-             rt.nsf6ht(), rt.nlak22(), rt.constant(1), #AC508-100-B-ML
-             rt.nlak22(), rt.nsf6(), rt.constant(1), # AC508-300-AB-ML
-             rt.constant(1)]
-
+system = rt.System([# AC508-180-AB-ML. Infinity focus to the left
+                    rt.SphericalSurface(r180c, [offset, 0, z180 + np.abs(r180c)], radius),
+                    rt.SphericalSurface(r180i, [offset, 0, z180 + t180c - np.abs(r180i)], radius),
+                    rt.SphericalSurface(r180f, [offset, 0, z180 + t180c + t180f - np.abs(r180f)], radius),
+                    # rt.SphericalSurface.get_on_axis(r180c, z180, radius),
+                    # rt.SphericalSurface.get_on_axis(r180i, z180 + t180c, radius),
+                    # rt.SphericalSurface.get_on_axis(r180f, z180 + t180c + t180f, radius),
+                    # AC508-100-B-ML. Infinity focus to the right
+                    rt.SphericalSurface(-r100f, [offset, 0, z100 + np.abs(r100f)], radius),
+                    rt.SphericalSurface(-r100i, [offset, 0, z100 + t100f + np.abs(r100i)], radius),
+                    rt.SphericalSurface(-r100c, [offset, 0, z100 + t100f + t100c - np.abs(r100c)], radius),
+                    # AC508-300-AB-ML. Infinity focus to the left
+                    rt.SphericalSurface.get_on_axis(r300c, z300, radius),
+                    rt.SphericalSurface.get_on_axis(r300i, z300 + t300c, radius),
+                    rt.FlatSurface([0, 0, z300 + t300c + t300f], [0, 0, 1], radius),
+                    # rt.SphericalSurface.get_on_axis(r300f, z300 + t300c + t300f, radius),
+                    # final focal plane
+                    rt.FlatSurface([0, 0, zend], [0, 0, 1], radius)
+                    ],
+                    [Nlak22(), Nsf6(), Constant(1),  #AC508-180-AB-ML
+                    Nsf6ht(), Nlak22(), Constant(1),  #AC508-100-B-ML
+                    Nlak22(), Nsf6(), Constant(1),  # AC508-300-AB-ML
+                    ]
+                    )
 
 rays = np.concatenate((rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, wavelength), # distributed along meridional plane
                        rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, wavelength, phi_start=np.pi/2), # distributed along sagittal plane
@@ -94,7 +85,7 @@ rays = np.concatenate((rt.get_collimated_rays([0, 0, 0], beam_rad, nrays, wavele
                        ), axis=0)
 
 # do ray tracing
-rays = rt.ray_trace_system(rays, surfaces, materials)
+rays = system.ray_trace(rays, Vacuum(), Vacuum())
 
 # estimate focus
 f_meridional = rt.intersect_rays(rays[-2, nrays//2 - 1], rays[-2, nrays//2 + 1])
@@ -114,11 +105,11 @@ print(f"for wo={wo:.3f}mm, R~{R / 1e3:.0f}m")
 
 
 # plot results
-figh, ax = rt.plot_rays(rays[:, :nrays], surfaces, colors="r", label="meridional", figsize=(16, 8))
-rt.plot_rays(rays[:, nrays:2*nrays], surfaces, phi=np.pi/2, colors="b", label="sagittal", ax=ax)
+figh, ax = system.plot(rays[:, :nrays], colors="r", label="meridional", figsize=(16, 8))
+system.plot(rays[:, nrays:2*nrays], phi=np.pi/2, colors="b", label="sagittal", ax=ax)
 figh.suptitle(f"ray trace, lens offset = {offset:.1f}mm")
 ax.legend()
 plt.show()
 
-figh_spot, ax_spot = rt.plot_spot_diagram(rays[-1])
-figh_spot.suptitle(f"spot_digram, lens offset = {offset:.1f}mm")
+# figh_spot, ax_spot = rt.plot_spot_diagram(rays[-1])
+# figh_spot.suptitle(f"spot_digram, lens offset = {offset:.1f}mm")

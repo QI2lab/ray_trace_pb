@@ -1,17 +1,15 @@
 """
 Simulate full SIM/ODT optical setup
 """
-import matplotlib
-matplotlib.use("TkAgg")
 import numpy as np
 import matplotlib.pyplot as plt
 import raytrace.raytrace as rt
+from raytrace.materials import Bk7, Sf2, Sf10, Nbaf10, Vacuum, Constant
 
 wavelength_align = 0.532 # todo: simulate alignment
 wavelength_odt = 0.785
 wavelengths_sim = [0.465, 0.532, 0.635]
 max_height = 25
-
 radius = 25
 
 # #############################
@@ -21,10 +19,6 @@ radius = 25
 # radii of curvature are given as if the flint side is first side. If reversed, need to take negatives
 # crown side towards infinity space, i.e. is more curved. And BFL is measured from flint side
 # (so BFL really defined opposite of the convention I'm using below but ...)
-bk7 = rt.bk7()
-sf2 = rt.sf2()
-sf10 = rt.sf10()
-nbaf10 = rt.nbaf10()
 
 # ACT508-200-A-ML
 t200c = 10.6
@@ -83,7 +77,7 @@ d_100_200 = 200 + bfl100
 d_100_400 = 100 + 400 - 6
 
 # #############################
-# Imaging system for ODT = DMD in BFP
+# Imaging System for ODT = DMD in BFP
 # #############################
 l23_shift = 0
 
@@ -123,63 +117,61 @@ l7s_odt = l7s_odt + t200c + t200f
 
 camera_pos = l7s_odt + bfl200_old + 11.2
 
-surfaces_excitation_odt =  \
-               [# ACT508-200-A-ML
-                rt.spherical_surface.get_on_axis(r200f, l1s_odt, radius),
-                rt.spherical_surface.get_on_axis(r200i, l1s_odt + t200f, radius),
-                rt.spherical_surface.get_on_axis(r200c, l1s_odt + t200c + t200f, radius),
-                # AC508-100-A-ML, seems like should have put other way in system?
-                rt.spherical_surface.get_on_axis(r100f, l2s_odt, radius),
-                rt.spherical_surface.get_on_axis(r100i, l2s_odt + t100f, radius),
-                rt.spherical_surface.get_on_axis(r100c, l2s_odt + t100c + t100f, radius),
-                # AC508-400-A-ML
-                rt.spherical_surface.get_on_axis(-r400c, l3s_odt, radius),
-                rt.spherical_surface.get_on_axis(-r400i, l3s_odt + t400c, radius),
-                rt.spherical_surface.get_on_axis(-r400f, l3s_odt + t400c + t400f, radius),
-                # AC508-300-A-ML
-                rt.spherical_surface.get_on_axis(r300f, l4s_odt, radius),
-                rt.spherical_surface.get_on_axis(r300i, l4s_odt + t300f, radius),
-                rt.spherical_surface.get_on_axis(r300c, l4s_odt + t300c + t300f, radius),
-                # olympus 100x NA 1.3 oil immersion objective
-                rt.perfect_lens(1.8, [0, 0, l5s_odt], [0, 0, 1], 1.8 * 1.3),
-                # focal plane: assume space between is oil + coverslip both with n=1.5
-                rt.flat_surface([0, 0, focal_plane], [0, 0, 1], 0.130)]
+system_excitation_odt = rt.System([# ACT508-200-A-ML
+                                   rt.SphericalSurface.get_on_axis(r200f, l1s_odt, radius),
+                                   rt.SphericalSurface.get_on_axis(r200i, l1s_odt + t200f, radius),
+                                   rt.SphericalSurface.get_on_axis(r200c, l1s_odt + t200c + t200f, radius),
+                                   # AC508-100-A-ML, seems like should have put other way in System?
+                                   rt.SphericalSurface.get_on_axis(r100f, l2s_odt, radius),
+                                   rt.SphericalSurface.get_on_axis(r100i, l2s_odt + t100f, radius),
+                                   rt.SphericalSurface.get_on_axis(r100c, l2s_odt + t100c + t100f, radius),
+                                   # AC508-400-A-ML
+                                   rt.SphericalSurface.get_on_axis(-r400c, l3s_odt, radius),
+                                   rt.SphericalSurface.get_on_axis(-r400i, l3s_odt + t400c, radius),
+                                   rt.SphericalSurface.get_on_axis(-r400f, l3s_odt + t400c + t400f, radius),
+                                   # AC508-300-A-ML
+                                   rt.SphericalSurface.get_on_axis(r300f, l4s_odt, radius),
+                                   rt.SphericalSurface.get_on_axis(r300i, l4s_odt + t300f, radius),
+                                   rt.SphericalSurface.get_on_axis(r300c, l4s_odt + t300c + t300f, radius),
+                                   # olympus 100x NA 1.3 oil immersion objective
+                                   rt.PerfectLens(1.8, [0, 0, l5s_odt], [0, 0, 1], 1.8 * 1.3),
+                                   # focal plane: assume space between is oil + coverslip both with n=1.5
+                                   rt.FlatSurface([0, 0, focal_plane], [0, 0, 1], 0.130)],
+                                   [Sf2(), Bk7(), Constant(1),
+                                   Sf10(), Nbaf10(), Constant(1),
+                                   Bk7(), Sf2(), Constant(1),
+                                   Sf2(), Bk7(), Constant(1),
+                                   Constant(1.5)]
+                                   )
 
-surfaces_detection_odt = \
-               [# space between focus and edge of water
-                rt.flat_surface([0, 0, focal_plane + water_thickness], [0, 0, 1], 1),
-                # mitutoyo 50x NA 0.55
-                rt.perfect_lens(4, [0, 0, l6s_odt], [0, 0, 1], 4 * 0.55),
-                # ACT08-200-A-ML
-                rt.spherical_surface.get_on_axis(-r200c_old, l7s_odt, radius),
-                rt.spherical_surface.get_on_axis(-r200i_old, l7s_odt + t200c_old, radius),
-                rt.spherical_surface.get_on_axis(-r200f_old, l7s_odt + t200c_old + t200f_old, radius),
-                # final focal plane
-                rt.flat_surface([0, 0, camera_pos], [0, 0, 1], 25.4)
-                ]
-surfaces_odt = surfaces_excitation_odt + surfaces_detection_odt
+system_detection_odt = rt.System([# space between focus and edge of water
+                                  rt.FlatSurface([0, 0, focal_plane + water_thickness], [0, 0, 1], 1),
+                                  # mitutoyo 50x NA 0.55
+                                  rt.PerfectLens(4, [0, 0, l6s_odt], [0, 0, 1], 4 * 0.55),
+                                  # ACT08-200-A-ML
+                                  rt.SphericalSurface.get_on_axis(-r200c_old, l7s_odt, radius),
+                                  rt.SphericalSurface.get_on_axis(-r200i_old, l7s_odt + t200c_old, radius),
+                                  rt.SphericalSurface.get_on_axis(-r200f_old, l7s_odt + t200c_old + t200f_old, radius),
+                                  # final focal plane
+                                  rt.FlatSurface([0, 0, camera_pos], [0, 0, 1], 25.4)
+                                  ],
+                                  [Constant(1.333),
+                                  Constant(1),
+                                  Bk7(), Sf2(), Constant(1)]
+                                  )
 
-materials_excitation_odt = [rt.constant(1),
-                            rt.sf2(), rt.bk7(), rt.constant(1),
-                            rt.sf10(), rt.nbaf10(), rt.constant(1),
-                            rt.bk7(), rt.sf2(), rt.constant(1),
-                            rt.sf2(), rt.bk7(), rt.constant(1),
-                            rt.constant(1.5)]
-materials_detection_odt = [rt.constant(1.333),
-                           rt.constant(1), rt.constant(1),
-                           rt.bk7(), rt.sf2(), rt.constant(1),
-                           rt.constant(1)]
-
-materials_odt = materials_excitation_odt + materials_detection_odt
+system = system_excitation_odt.concatenate(system_excitation_odt,
+                                           Constant(1),
+                                           distance=0.)
 
 # determine focal points
-f1, f2, pp1, pp2, efl1, efl2 = rt.find_cardinal_points(surfaces_odt, materials_odt, wavelength_odt)
-ffl = l1s_odt - f1[0, 2]
-bfl = f2[0, 2] - l5e_odt
-print("efl (back) = %0.3fmm" % efl1)
-print("efl (front) = %0.3fmm" % (pp1 - f1[0, 2]))
-print("ffl = %0.3fmm" % ffl)
-print("bfl = %0.3fmm" % bfl)
+f1, f2, pp1, pp2, _, _, efl1, efl2 = system.get_cardinal_points(wavelength_odt, Constant(1), Constant(1))
+ffl = l1s_odt - f1[2]
+bfl = f2[2] - l5e_odt
+print(f"efl (back) = {efl1:.3f}mm")
+print(f"efl (front) = {efl2:.3f}mm")
+print(f"ffl = {ffl:.3f}mm")
+print(f"bfl = {bfl:.3f}mm")
 
 # autofocus
 # surfaces_odt, materials_odt = rt.auto_focus(surfaces_odt, materials_odt, wavelength)
@@ -202,24 +194,25 @@ rays = np.concatenate((rt.get_ray_fan([0, 0, 0], max_angle, nrays, wavelength_od
                       axis=0)
 
 
-rays = rt.ray_trace_system(rays, surfaces_odt, materials_odt)
+rays = system.ray_trace(rays, Constant(1), Constant(1))
 
 # plot results
-figh = rt.plot_rays(rays, surfaces_odt, colors=["k"] * nrays + ["b"] * nrays + ["r"] * nrays + ["g"] * nrays, figsize=(16, 8))
-ax = plt.gca()
+figh, ax = system.plot(rays,
+                       colors=["k"] * nrays + ["b"] * nrays + ["r"] * nrays + ["g"] * nrays,
+                       figsize=(16, 8))
 ax.plot([l5s_odt - 1.8, l5s_odt - 1.8], [-10, 10], 'k--')
 plt.suptitle("ODT")
 
 # fluorescence odt
 rays_fl_odt = rt.get_ray_fan([0, 0, focal_plane], np.arcsin(0.55 / 1.33), nrays, wavelength_odt)
-rays_fl_odt = rt.ray_trace_system(rays_fl_odt, surfaces_detection_odt, materials_detection_odt)
+rays_fl_odt = system_detection_odt.ray_trace(rays_fl_odt, Constant(1.333), Constant(1))
 
-figh = rt.plot_rays(rays_fl_odt, surfaces_detection_odt, figsize=(16, 8))
+figh = system_detection_odt.plot(rays_fl_odt, figsize=(16, 8))
 ax = plt.gca()
 plt.suptitle("ODT, fluorescence detection")
 
 # #############################
-# Imaging system for SIM = DMD in imaging plane
+# Imaging System for SIM = DMD in imaging plane
 # #############################
 l1s_sim = d_dmd_lens
 l1e_sim = l1s_sim + t200c + t200f
@@ -233,32 +226,29 @@ l3e_sim = l3s_sim + t300c + t300f
 l4s_sim = l3e_sim + d_300_obj
 l4e_sim = l4s_sim
 
-surfaces_sim = [# ACT508-200-A-ML
-                rt.spherical_surface.get_on_axis(r200f, l1s_sim, radius),
-                rt.spherical_surface.get_on_axis(r200i, l1s_sim + t200f, radius),
-                rt.spherical_surface.get_on_axis(r200c, l1s_sim + t200c + t200f, radius),
-                # AC508-400-A-ML
-                rt.spherical_surface.get_on_axis(-r400c, l2s_sim, radius),
-                rt.spherical_surface.get_on_axis(-r400i, l2s_sim + t400c, radius),
-                rt.spherical_surface.get_on_axis(-r400f, l2s_sim + t400c + t400f, radius),
-                # AC508-300-A-ML
-                rt.spherical_surface.get_on_axis(r300f, l3s_sim, radius),
-                rt.spherical_surface.get_on_axis(r300i, l3s_sim + t300f, radius),
-                rt.spherical_surface.get_on_axis(r300c, l3s_sim + t300c + t300f, radius),
-                # objective
-                rt.perfect_lens(1.8, [0, 0, l4s_sim], [0, 0, 1], 1.8 * 1.3),
-                rt.flat_surface([0, 0, l4s_sim + 1.5 * 1.8], [0, 0, 1], 0.13)
-                ]
+system_sim = rt.System([# ACT508-200-A-ML
+                        rt.SphericalSurface.get_on_axis(r200f, l1s_sim, radius),
+                        rt.SphericalSurface.get_on_axis(r200i, l1s_sim + t200f, radius),
+                        rt.SphericalSurface.get_on_axis(r200c, l1s_sim + t200c + t200f, radius),
+                        # AC508-400-A-ML
+                        rt.SphericalSurface.get_on_axis(-r400c, l2s_sim, radius),
+                        rt.SphericalSurface.get_on_axis(-r400i, l2s_sim + t400c, radius),
+                        rt.SphericalSurface.get_on_axis(-r400f, l2s_sim + t400c + t400f, radius),
+                        # AC508-300-A-ML
+                        rt.SphericalSurface.get_on_axis(r300f, l3s_sim, radius),
+                        rt.SphericalSurface.get_on_axis(r300i, l3s_sim + t300f, radius),
+                        rt.SphericalSurface.get_on_axis(r300c, l3s_sim + t300c + t300f, radius),
+                        # objective
+                        rt.PerfectLens(1.8, [0, 0, l4s_sim], [0, 0, 1], 1.8 * 1.3),
+                        rt.FlatSurface([0, 0, l4s_sim + 1.5 * 1.8], [0, 0, 1], 0.13)
+                        ],
+                        [Sf2(), Bk7(), Constant(1),
+                        Bk7(), Sf2(), Constant(1),
+                        Sf2(), Bk7(), Constant(1),
+                        Constant(1.5)
+                        ]
+                        )
 
-materials_sim = [rt.constant(1),
-                 rt.sf2(), rt.bk7(), rt.constant(1),
-                 rt.bk7(), rt.sf2(), rt.constant(1),
-                 rt.sf2(), rt.bk7(), rt.constant(1),
-                 rt.constant(1.5), rt.constant(1.5)
-                 ]
-
-
-# surfaces_sim, ns_sim = rt.auto_focus(surfaces_sim, ns_sim, wavelength)
 
 max_angle = 0.89 * np.pi/180
 sep = 10
@@ -272,19 +262,20 @@ rays_sim = [np.concatenate((rt.get_ray_fan([0, 0, 0], max_angle, nrays, waveleng
 
 
 for ii in range(len(rays_sim)):
-    rays_sim[ii] = rt.ray_trace_system(rays_sim[ii], surfaces_sim, materials_sim)
+    rays_sim[ii] = system_sim.ray_trace(rays_sim[ii], Constant(1), Constant(1.5))
 
 
 # plot results
 rays_sim_all = np.concatenate(rays_sim, axis=1)
-figh = rt.plot_rays(rays_sim_all, surfaces_sim, colors=["b"] * (4 * nrays) + ["g"] * (4 * nrays) + ["r"] * (4 * nrays),
-                    figsize=(16, 8))
-ax = plt.gca()
-plt.suptitle("SIM")
+figh, ax = system_sim.plot(rays_sim_all,
+                           colors=["b"] * (4 * nrays) + ["g"] * (4 * nrays) + ["r"] * (4 * nrays),
+                           figsize=(16, 8))
+figh.suptitle("SIM")
 
 # phase at first pupil
-pupil1 = rt.flat_surface([0, 0, l1e_sim + 200], [0, 0, 1], radius)
-rays_pupil1 = rt.ray_trace_system(rays_sim[0][6], [pupil1], [rt.constant(1), rt.constant(1)])
+# todo: fix this part
+pupil1 = rt.FlatSurface([0, 0, l1e_sim + 200], [0, 0, 1], radius)
+rays_pupil1 = rt.ray_trace(rays_sim[0][6], [pupil1], [rt.Constant(1), rt.Constant(1)])
 
 figh = plt.figure()
 for ii in range(4):
@@ -303,8 +294,8 @@ defocus = (pfit[2] - 6 * np.sqrt(5) * spherical) / (2 * np.sqrt(3))
 piston = pfit[-1] - defocus + spherical
 
 # phase at last pupil
-pupil_last = rt.flat_surface([0, 0, l4s_sim - 1.8], [0, 0, 1], radius)
-rays_pupil_last = rt.ray_trace_system(rays_sim[0][18], [pupil_last], [rt.constant(1), rt.constant(1)])
+pupil_last = rt.FlatSurface([0, 0, l4s_sim - 1.8], [0, 0, 1], radius)
+rays_pupil_last = rt.ray_trace_system(rays_sim[0][18], [pupil_last], [rt.Constant(1), rt.Constant(1)])
 
 figh = plt.figure()
 for ii in range(4):
