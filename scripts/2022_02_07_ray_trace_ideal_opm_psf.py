@@ -1,18 +1,14 @@
 """
 Calculate ideal PSF of "snouty" oblique plane microscope (OPM)
 """
-import matplotlib
-matplotlib.use("TkAgg")
 import time
 from pathlib import Path
 import numpy as np
 from numpy import fft
-from scipy.interpolate import griddata
 #import tifffile
-import raytrace.raytrace as rt
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
-from matplotlib.colors import PowerNorm
+import raytrace.raytrace as rt
+from raytrace.materials import Vacuum, Constant
 
 plot_results = True
 
@@ -68,19 +64,29 @@ p_pupil_o3 = p_o3 + f3 * o3_normal
 p_t3 = p_o3 + (f3 + f_tube_lens_3) * o3_normal
 p_imag = p_t3 + f_tube_lens_3 * o3_normal
 
-surfaces = [rt.PerfectLens(f1, [0, 0, p_o1], [0, 0, 1], alpha1),  # O1
-            rt.FlatSurface([0, 0, p_pupil_o1], [0, 0, 1], n1 * f1),  # O1 pupil
-            rt.PerfectLens(f_tube_lens_1, [0, 0, p_t1], [0, 0, 1], alpha1),  # tube lens #1
-            rt.PerfectLens(f_tube_lens_2, [0, 0, p_t2], [0, 0, 1], alpha2),  # tube lens #2
-            rt.FlatSurface([0, 0, p_pupil_o2], [0, 0, 1], n2 * f2),  # pupil of O2
-            rt.PerfectLens(f2, [0, 0, p_o2], [0, 0, 1], alpha2),  # O2
-            rt.FlatSurface([0, 0, p_remote_focus], o3_normal, r2),  # snouty nose cone
-            rt.PerfectLens(f3, p_o3, o3_normal, alpha3),  # O3
-            rt.FlatSurface(p_pupil_o3, o3_normal, r3),  # pupil of 03
-            rt.PerfectLens(f_tube_lens_3, p_t3, o3_normal, alpha3),  # tube lens #3
-            rt.FlatSurface(p_imag, o3_normal, aperture_rad)]
-materials = [rt.Constant(n1), rt.Vacuum(), rt.Vacuum(), rt.Vacuum(), rt.Vacuum(), rt.Vacuum(),
-             rt.Constant(n2), rt.Constant(n3), rt.Vacuum(), rt.Vacuum(), rt.Vacuum(), rt.Vacuum()]
+system = rt.System([rt.PerfectLens(f1, [0, 0, p_o1], [0, 0, 1], alpha1),  # O1
+                    rt.FlatSurface([0, 0, p_pupil_o1], [0, 0, 1], n1 * f1),  # O1 pupil
+                    rt.PerfectLens(f_tube_lens_1, [0, 0, p_t1], [0, 0, 1], alpha1),  # tube lens #1
+                    rt.PerfectLens(f_tube_lens_2, [0, 0, p_t2], [0, 0, 1], alpha2),  # tube lens #2
+                    rt.FlatSurface([0, 0, p_pupil_o2], [0, 0, 1], n2 * f2),  # pupil of O2
+                    rt.PerfectLens(f2, [0, 0, p_o2], [0, 0, 1], alpha2),  # O2
+                    rt.FlatSurface([0, 0, p_remote_focus], o3_normal, r2),  # snouty nose cone
+                    rt.PerfectLens(f3, p_o3, o3_normal, alpha3),  # O3
+                    rt.FlatSurface(p_pupil_o3, o3_normal, r3),  # pupil of 03
+                    rt.PerfectLens(f_tube_lens_3, p_t3, o3_normal, alpha3),  # tube lens #3
+                    rt.FlatSurface(p_imag, o3_normal, aperture_rad)],
+                   [Vacuum(),
+                    Vacuum(),
+                    Vacuum(),
+                    Vacuum(),
+                    Vacuum(),
+                    Constant(n2),
+                    Constant(n3),
+                    Vacuum(),
+                    Vacuum(),
+                    Vacuum()]
+                   )
+# materials = [rt.Constant(n1), , rt.Vacuum()]
 
 # setup grid in 03 pupil
 dxy = 5e-3
@@ -118,12 +124,13 @@ xs -= np.mean(xs)
 output_efield = np.zeros((npos, nxy, nxy), dtype=complex)
 pupil_efield = np.zeros((npos, nxy, nxy), dtype=complex)
 for ii in range(npos):
-    print("ray tracing z-plane %d/%d, elapsed time %0.2fs" % (ii + 1, npos, time.perf_counter() - tstart), end="\r")
+    print(f"ray tracing z-plane {ii+1:d}/{npos:d}, "
+          f"elapsed time {time.perf_counter() - tstart:.2f}s", end="\r")
 
     # zpos = xs[ii] * np.tan(theta)
     zpos = 0
     rays = rt.get_ray_fan([xs[ii], 0, zpos], alpha1, 101, wavelength=wavelength, nphis=51)
-    rays = rt.ray_trace_system(rays, surfaces, materials)
+    rays = system.ray_trace(rays, Constant(n1), Vacuum())
 
     # ##################################
     # plot rays in O1 pupil
@@ -182,10 +189,10 @@ for ii in range(npos):
         # ##################################
         # ray trace
         # ##################################
-        rt.plot_rays(rays, surfaces)
+        system.plot(rays)
         ax = plt.gca()
         ax.axis("equal")
-        ax.set_title("ray trace, input position = (x, y, z) = (%0.5f, 0, 0)" % xs[ii])
+        ax.set_title(f"ray trace, input position = (x, y, z) = ({xs[ii]:.5f}, 0, 0)")
 
         # draw imaging plane
         l = 1
@@ -195,14 +202,20 @@ for ii in range(npos):
         # phases in pupil
         # ##################################
         figh = plt.figure()
-        plt.suptitle("input position = (x, y, z) = (%0.5f, 0, 0)" % xs[ii])
+        plt.suptitle(f"input position = (x, y, z) = ({xs[ii]:.5f}, 0, 0)")
         grid = plt.GridSpec(2, 3)
 
         # O1 pupil
         ax = plt.subplot(grid[0, 0])
         ax.set_title("Rays and phases in O1 pupil")
 
-        im = ax.scatter(x_o1, y_o1, marker='.', c=phi_o1, cmap="hsv", vmin=np.nanmin(phi_o1), vmax=np.nanmax(phi_o1))
+        im = ax.scatter(x_o1,
+                        y_o1,
+                        marker='.',
+                        c=phi_o1,
+                        cmap="hsv",
+                        vmin=np.nanmin(phi_o1),
+                        vmax=np.nanmax(phi_o1))
         ax.add_artist(Circle((0, 0), radius=n1*f1, color='k', fill=False))
         ax.axis("equal")
         plt.colorbar(im)
@@ -250,8 +263,12 @@ for ii in range(npos):
 
         ax = plt.subplot(grid[1, 1])
         ax.set_title("interpolated arg(E) O3")
-        ax.imshow(phis_interp, cmap="hsv", vmin=np.nanmin(phi_o3), vmax=np.nanmax(phi_o3),
-                  extent=extent_xy_pupil, origin="lower")
+        ax.imshow(phis_interp,
+                  cmap="hsv",
+                  vmin=np.nanmin(phi_o3),
+                  vmax=np.nanmax(phi_o3),
+                  extent=extent_xy_pupil,
+                  origin="lower")
         ax.add_artist(Circle((0, 0), radius=r3, color='k', fill=False))
         ax.set_xlabel("position along $n_a$ (mm)")
         ax.set_ylabel("position along $n_b$ (mm)")
@@ -363,5 +380,4 @@ ax.set_ylim([-len_scale, len_scale])
 #                  resolution=(1 / (dx * 1e3), 1 / (dy * 1e3)),
 #                  metadata={"Info": "snouty psf, theta = %0.2fdeg" % (theta * 180/np.pi),
 #                            "unit": "um", "spacing": (dz * 1e3)})
-
 

@@ -3,20 +3,17 @@ Simulate full ODT optical setup, including extra coverglass to simulate flow cel
 
 sample region consists of (1) layer of oil; (2) no. 1.5 coverslip (3) sample (water) (4) top coverglass (5) water immersion for detection objective
 """
-import matplotlib
-matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import numpy as np
-import raytrace.raytrace as rt
 from pathlib import Path
 import datetime
+import raytrace.raytrace as rt
+from raytrace.materials import Vacuum, Constant, Bk7, Sf2, Sf10, Nbaf10, Nlak22, Nsf6, Nsf6ht
 
 # #############################
 # define phsyical parameters used in setup
 # #############################
-
 include_relay = False
-
 wavelength = 0.785
 dmd_tilt_angle = 20 * np.pi/180
 aperture_radius = 25.4
@@ -54,8 +51,8 @@ thickness_water_immersion = (f_detection - thickness_sample / n_sample - thickne
 # #############################
 
 l1 = rt.Doublet(names="ACT508-200-A-ML",
-                material_crown=rt.Bk7(),
-                material_flint=rt.Sf2(),
+                material_crown=Bk7(),
+                material_flint=Sf2(),
                 radius_crown=106.2,
                 radius_flint=-409.4,
                 radius_interface=-92.1,
@@ -65,8 +62,8 @@ l1 = rt.Doublet(names="ACT508-200-A-ML",
                 input_collimated=False)
 
 l2 = rt.Doublet(names="AC508-100-A-ML",
-                material_crown=rt.Nbaf10(),
-                material_flint=rt.Sf10(),
+                material_crown=Nbaf10(),
+                material_flint=Sf10(),
                 radius_crown=71.1,
                 radius_flint=-363.1,
                 radius_interface=-44.2,
@@ -77,8 +74,8 @@ l2 = rt.Doublet(names="AC508-100-A-ML",
                 )
 
 l3 = rt.Doublet(names="AC508-400-A-ML",
-                material_crown=rt.Bk7(),
-                material_flint=rt.Sf2(),
+                material_crown=Bk7(),
+                material_flint=Sf2(),
                 radius_crown=292.3,
                 radius_flint=-398.5,
                 radius_interface=-148.9,
@@ -89,8 +86,8 @@ l3 = rt.Doublet(names="AC508-400-A-ML",
                 )
 
 l4 = rt.Doublet(names="AC508-300-A-ML",
-                material_crown=rt.Bk7(),
-                material_flint=rt.Sf2(),
+                material_crown=Bk7(),
+                material_flint=Sf2(),
                 radius_crown=161.5,
                 radius_flint=-580.8,
                 radius_interface=-134,
@@ -114,9 +111,9 @@ sample = rt.System([# oil
                     # top cover-glass
                     rt.FlatSurface([0, 0, thickness_coverslip + thickness_sample + thickness_top_coverslip], [0, 0, 1], aperture_radius)
                     ],
-                    [rt.Constant(n_coverglass),  # coverslip
-                     rt.Constant(n_sample),  # sample
-                     rt.Constant(n_top_coverslip)],
+                    [Constant(n_coverglass),  # coverslip
+                     Constant(n_sample),  # sample
+                     Constant(n_top_coverslip)],
                     names="sample")
 
 obj2 = rt.System([rt.PerfectLens(f_detection, [0, 0, 0], [0, 0, 1], alpha_detection)],
@@ -137,8 +134,8 @@ obj2 = rt.System([rt.PerfectLens(f_detection, [0, 0, 0], [0, 0, 1], alpha_detect
 #                 )
 
 l8 = rt.Doublet(names="AC508-180-AB-ML",
-                material_crown=rt.Nlak22(),
-                material_flint=rt.Nsf6(),
+                material_crown=Nlak22(),
+                material_flint=Nsf6(),
                 radius_crown=144.4,
                 radius_flint=-328.2,
                 radius_interface=-115.4,
@@ -149,8 +146,8 @@ l8 = rt.Doublet(names="AC508-180-AB-ML",
                 )
 
 l9 = rt.Doublet(names="AC508-100-B-ML",
-                material_crown=rt.Nlak22(),
-                material_flint=rt.Nsf6ht(),
+                material_crown=Nlak22(),
+                material_flint=Nsf6ht(),
                 radius_crown=65.8,
                 radius_flint=-280.6,
                 radius_interface=-56.0,
@@ -161,8 +158,8 @@ l9 = rt.Doublet(names="AC508-100-B-ML",
                 )
 
 l10 = rt.Doublet(names="AC508-300-AB-ML",
-                 material_crown=rt.Nlak22(),
-                 material_flint=rt.Nsf6(),
+                 material_crown=Nlak22(),
+                 material_flint=Nsf6(),
                  radius_crown=167.7,
                  radius_flint=np.inf,
                  radius_interface=-285.8,
@@ -174,59 +171,59 @@ l10 = rt.Doublet(names="AC508-300-AB-ML",
 
 
 # compute working distances and other paraxial info about lenses
-fp1_a, fp1_b, _, _, efl1, _ = l1.get_cardinal_points(wavelength, rt.Vacuum(), rt.Vacuum())
+fp1_a, fp1_b, _, _, _, _, efl1, _ = l1.get_cardinal_points(wavelength, Vacuum(), Vacuum())
 wd1_left = (l1.surfaces[0].paraxial_center - fp1_a)[2]
 wd1_right = (fp1_b - l1.surfaces[-1].paraxial_center)[2]
 
-fp2_a, fp2_b, _, _, efl2, _ = l2.get_cardinal_points(wavelength, rt.Vacuum(), rt.Vacuum())
+fp2_a, fp2_b, _, _, _, _, efl2, _ = l2.get_cardinal_points(wavelength, Vacuum(), Vacuum())
 wd2_left = (l2.surfaces[0].paraxial_center - fp2_a)[2]
 wd2_right = (fp2_b - l2.surfaces[-1].paraxial_center)[2]
 
-fp3_a, fp3_b, _, _, efl3, _ = l3.get_cardinal_points(wavelength, rt.Vacuum(), rt.Vacuum())
+fp3_a, fp3_b, _, _, _, _, efl3, _ = l3.get_cardinal_points(wavelength, Vacuum(), Vacuum())
 wd3_left = (l3.surfaces[0].paraxial_center - fp3_a)[2]
 wd3_right = (fp3_b - l3.surfaces[-1].paraxial_center)[2]
 
-fp4_a, fp4_b, _, _, efl4, _ = l4.get_cardinal_points(wavelength, rt.Vacuum(), rt.Vacuum())
+fp4_a, fp4_b, _, _, _, _, efl4, _ = l4.get_cardinal_points(wavelength, Vacuum(), Vacuum())
 wd4_left = (l4.surfaces[0].paraxial_center - fp4_a)[2]
 wd4_right = (fp4_b - l4.surfaces[-1].paraxial_center)[2]
 
-fp5_a, fp5_b, _, _, efl5, _ = obj1.get_cardinal_points(wavelength, rt.Vacuum(), rt.Vacuum())
+fp5_a, fp5_b, _, _, _, _, efl5, _ = obj1.get_cardinal_points(wavelength, Vacuum(), Vacuum())
 wd5_left = (obj1.surfaces[0].paraxial_center - fp5_a)[2]
 # wd5_right = (fp5_b - obj1.surfaces[-1].paraxial_center)[2]
 
-fp7_a, fp7_b, _, _, efl7, _ = obj2.get_cardinal_points(wavelength, rt.Vacuum(), rt.Vacuum())
+fp7_a, fp7_b, _, _, _, _, efl7, _ = obj2.get_cardinal_points(wavelength, Vacuum(), Vacuum())
 # wd7_left = (obj2.surfaces[0].paraxial_center - fp7_a)[2]
 wd7_right = (fp7_b - obj2.surfaces[-1].paraxial_center)[2]
 
-fp8_a, fp8_b, _, _, efl8, _ = l8.get_cardinal_points(wavelength, rt.Vacuum(), rt.Vacuum())
+fp8_a, fp8_b, _, _, _, _, efl8, _ = l8.get_cardinal_points(wavelength, Vacuum(), Vacuum())
 wd8_left = (l8.surfaces[0].paraxial_center - fp8_a)[2]
 wd8_right = (fp8_b - l8.surfaces[-1].paraxial_center)[2]
 
-fp9_a, fp9_b, _, _, efl9, _ = l9.get_cardinal_points(wavelength, rt.Vacuum(), rt.Vacuum())
+fp9_a, fp9_b, _, _, _, _, efl9, _ = l9.get_cardinal_points(wavelength, Vacuum(), Vacuum())
 wd9_left = (l9.surfaces[0].paraxial_center - fp9_a)[2]
 wd9_right = (fp9_b - l9.surfaces[-1].paraxial_center)[2]
 
-fp10_a, fp10_b, _, _, efl10, _ = l10.get_cardinal_points(wavelength, rt.Vacuum(), rt.Vacuum())
+fp10_a, fp10_b, _, _, _, _, efl10, _ = l10.get_cardinal_points(wavelength, Vacuum(), Vacuum())
 wd10_left = (l10.surfaces[0].paraxial_center - fp10_a)[2]
 wd10_right = (fp10_b - l10.surfaces[-1].paraxial_center)[2]
 
 # create optical System using paraxial working distances to set spacing between lenses
-ls = l1.concatenate(l2, rt.Vacuum(), wd1_right + wd2_left)
-ls = ls.concatenate(l3, rt.Vacuum(), wd2_right + wd3_left)
-ls = ls.concatenate(l4, rt.Vacuum(), wd3_right + wd4_left)
-ls = ls.concatenate(obj1, rt.Vacuum(), wd4_right + wd5_left)
-ls = ls.concatenate(sample, rt.Constant(n_oil), thickness_oil)
-ls = ls.concatenate(obj2, rt.Constant(n_water), thickness_water_immersion) # detection objective
-ls = ls.concatenate(l8, rt.Vacuum(), wd7_right + wd8_left) # tube lens
+ls = l1.concatenate(l2, Vacuum(), wd1_right + wd2_left)
+ls = ls.concatenate(l3, Vacuum(), wd2_right + wd3_left)
+ls = ls.concatenate(l4, Vacuum(), wd3_right + wd4_left)
+ls = ls.concatenate(obj1, Vacuum(), wd4_right + wd5_left)
+ls = ls.concatenate(sample, Constant(n_oil), thickness_oil)
+ls = ls.concatenate(obj2, Constant(n_water), thickness_water_immersion) # detection objective
+ls = ls.concatenate(l8, Vacuum(), wd7_right + wd8_left) # tube lens
 
 if include_relay:
-    ls = ls.concatenate(l9, rt.Vacuum(), wd8_right + wd9_left) # relay lens #1
-    ls = ls.concatenate(l10, rt.Vacuum(), wd9_right + wd10_left) # relay lens #2
+    ls = ls.concatenate(l9, Vacuum(), wd8_right + wd9_left) # relay lens #1
+    ls = ls.concatenate(l10, Vacuum(), wd9_right + wd10_left) # relay lens #2
     ls = ls.concatenate(rt.System([rt.FlatSurface([0, 0, 0], [0, 0, 1], aperture_radius)], []),  # add camera
-                        rt.Vacuum(), wd10_right)
+                        Vacuum(), wd10_right)
 else:
     ls = ls.concatenate(rt.System([rt.FlatSurface([0, 0, 0], [0, 0, 1], aperture_radius)], []),  # add camera
-                        rt.Vacuum(), wd8_right)
+                        Vacuum(), wd8_right)
 
 # #######################################
 # ray tracing
@@ -243,15 +240,18 @@ nrays = 21
 rays = np.concatenate([rt.get_ray_fan([fr * sep, 0, fr * lateral_shift - wd1_left], max_angle, nrays, wavelength) for fr in pupil_fractions], axis=0)
 
 # ray trace
-rays = ls.ray_trace(rays, rt.Vacuum(), rt.Vacuum())
+rays = ls.ray_trace(rays, Vacuum(), Vacuum())
 
 # #######################################
 # plot results
 # #######################################
-figh, ax = ls.plot(rays, colors=["k"] * nrays + ["b"] * nrays + ["r"] * nrays + ["g"] * nrays,
+figh, ax = ls.plot(rays,
+                   colors=["k"] * nrays + ["b"] * nrays + ["r"] * nrays + ["g"] * nrays,
                    figsize=(16, 8))
 ax.plot([ls.surfaces[12].center[2] - f_excitation, ls.surfaces[12].center[2] - f_excitation],
-        [-aperture_radius, aperture_radius], 'm--', label="objective FP")
+        [-aperture_radius, aperture_radius],
+        'm--',
+        label="objective FP")
 ax.legend()
 figh.suptitle("ODT optical System", fontsize=16)
 
@@ -267,3 +267,5 @@ if saving:
     ax.set_ylim([-15, 15])
     tstamp = datetime.datetime.now().strftime('%Y_%m_%d_%H;%M;%S')
     figh_save.savefig(Path.home() / "Desktop" / f"{tstamp:s}_optical_system.pdf", bbox_inches="tight")
+
+plt.show()

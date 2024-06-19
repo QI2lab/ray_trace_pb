@@ -2,9 +2,10 @@
 1/25/2022, Peter T. Brown
 """
 import numpy as np
-import raytrace.raytrace as rt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+import raytrace.raytrace as rt
+from raytrace.materials import Constant, Vacuum
 
 wavelength = 532e-6
 aperture_rad = 2
@@ -55,18 +56,29 @@ p_pupil_o3 = p_o3 + f3 * o3_normal
 p_t3 = p_o3 + (f3 + f_tube_lens_3) * o3_normal
 p_imag = p_t3 + f_tube_lens_3 * o3_normal
 
-surfaces = [rt.PerfectLens(f1, [0, 0, p_o1], [0, 0, 1], alpha1),  # O1
-            rt.FlatSurface([0, 0, p_pupil_o1], [0, 0, 1], n1 * f1),  # O1 pupil
-            rt.PerfectLens(f_tube_lens_1, [0, 0, p_t1], [0, 0, 1], alpha1),  # tube lens #1
-            rt.PerfectLens(f_tube_lens_2, [0, 0, p_t2], [0, 0, 1], alpha2),  # tube lens #2
-            rt.FlatSurface([0, 0, p_pupil_o2], [0, 0, 1], n2 * f2),  # pupil of O2
-            rt.PerfectLens(f2, [0, 0, p_o2], [0, 0, 1], alpha2),  # O2
-            rt.FlatSurface([0, 0, p_remote_focus], o3_normal, r2),  # snouty nose cone
-            rt.PerfectLens(f3, p_o3, o3_normal, alpha3),  # O3
-            rt.FlatSurface(p_pupil_o3, o3_normal, f3 * n3),  # pupil of 03
-            rt.PerfectLens(f_tube_lens_3, p_t3, o3_normal, alpha3),  # tube lens #3
-            rt.FlatSurface(p_imag, o3_normal, aperture_rad)]
-ns = [n1, 1, 1, 1, 1, 1, n2, n3, 1, 1, 1, 1]
+system = rt.System([rt.PerfectLens(f1, [0, 0, p_o1], [0, 0, 1], alpha1),  # O1
+                    rt.FlatSurface([0, 0, p_pupil_o1], [0, 0, 1], n1 * f1),  # O1 pupil
+                    rt.PerfectLens(f_tube_lens_1, [0, 0, p_t1], [0, 0, 1], alpha1),  # tube lens #1
+                    rt.PerfectLens(f_tube_lens_2, [0, 0, p_t2], [0, 0, 1], alpha2),  # tube lens #2
+                    rt.FlatSurface([0, 0, p_pupil_o2], [0, 0, 1], n2 * f2),  # pupil of O2
+                    rt.PerfectLens(f2, [0, 0, p_o2], [0, 0, 1], alpha2),  # O2
+                    rt.FlatSurface([0, 0, p_remote_focus], o3_normal, r2),  # snouty nose cone
+                    rt.PerfectLens(f3, p_o3, o3_normal, alpha3),  # O3
+                    rt.FlatSurface(p_pupil_o3, o3_normal, f3 * n3),  # pupil of 03
+                    rt.PerfectLens(f_tube_lens_3, p_t3, o3_normal, alpha3),  # tube lens #3
+                    rt.FlatSurface(p_imag, o3_normal, aperture_rad)],
+                   [Vacuum(),
+                    Vacuum(),
+                    Vacuum(),
+                    Vacuum(),
+                    Vacuum(),
+                    Constant(n2),
+                    Constant(n3),
+                    Vacuum(),
+                    Vacuum(),
+                    Vacuum()]
+                   )
+# ns = [n1, , 1]
 
 # launch rays and ray trace
 dx = 0.001
@@ -74,16 +86,15 @@ dy = 0.001
 dz = dx * np.tan(theta)
 # dz = 0
 # rays = rt.get_ray_fan([dx, dy, dz], alpha1, 31, wavelength=wavelength, nphis=21)
-rays = rt.get_ray_fan([dx, dy, dz], alpha1, 101, wavelength=wavelength, nphis=51)
+rays = rt.get_ray_fan([dx, dy, dz], alpha1, 101, wavelength, nphis=51)
 # rays = rt.get_collimated_rays([dx, dy, dz], 1, 101, wavelength=wavelength, nphis=51,
 #                               normal=[0, np.sin(10*np.pi/180), np.cos(10*np.pi/180)])
-rays = rt.ray_trace_system(rays, surfaces, ns)
+rays = system.ray_trace(rays, Constant(n1), Vacuum())
 
 # ##################################
 # plot ray trace surfaces
 # ##################################
-rt.plot_rays(rays, surfaces)
-ax = plt.gca()
+fig, ax = system.plot(rays)
 ax.axis("equal")
 
 # draw imaging plane
@@ -150,9 +161,9 @@ ax.set_xlim([-na2*f2, na2*f2])
 # ##################################
 rays_pupil = rays[-5]
 na = np.array([1, 0, 0])
-nc = surfaces[-1].normal
+nc = system.surfaces[-1].normal
 nb = np.cross(nc, na)
-c = surfaces[-3].center
+c = system.surfaces[-3].center
 x = np.sum((rays_pupil[:, :3] - np.expand_dims(c, axis=0)) * np.expand_dims(na, axis=0), axis=1)
 y = np.sum((rays_pupil[:, :3] - np.expand_dims(c, axis=0)) * np.expand_dims(nb, axis=0), axis=1)
 phi = rays_pupil[:, -2]
