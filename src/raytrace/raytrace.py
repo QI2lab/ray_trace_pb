@@ -136,90 +136,6 @@ def get_free_space_abcd(d: float, n: float = 1.):
     return mat
 
 
-def refract(rays: NDArray,
-            normals: NDArray,
-            material1: Material,
-            material2: Material):
-    """
-    Refracts rays at Surface with given normal by applying Snell's law
-
-    :param rays: N x 8 array
-    :param normals: N x 3 array
-    :param material1: index of refraction on the side of the interface the rays are travelling from
-    :param material2: index of refraction on the other side of the interface
-    :return rays_out: N x 8 array
-    """
-    normals = np.atleast_2d(normals)
-    rays = np.atleast_2d(rays)
-
-    ds = rays[:, 3:6]
-    wls = np.expand_dims(rays[:, 7], axis=1)
-
-    # basis for computation (na, nb, nc)
-    # na is normal direction, nb orthogonal to normal and ray
-    na = normals
-
-    with np.errstate(invalid="ignore"):
-        nb = np.cross(ds, normals)
-        nb = nb / np.expand_dims(np.linalg.norm(nb, axis=1), axis=1)
-        nb[np.isnan(nb)] = 0
-
-        nc = np.cross(na, nb)
-        nc = nc / np.expand_dims(np.linalg.norm(nc, axis=1), axis=1)
-        nc[np.isnan(nc)] = 0
-
-        # snell's law
-        # the tangential component (i.e. nc direction) of k*n*ds is preserved across the interface
-        mag_nc = material1.n(wls) / material2.n(wls) * np.expand_dims(np.sum(nc * ds, axis=1), axis=1)
-        sign_na = np.expand_dims(np.sign(np.sum(na * ds, axis=1)), axis=1)
-        # normalize outgoing ray direction. By construction nothing in nb direction
-        ds_out = mag_nc * nc + sign_na * np.sqrt(1 - mag_nc**2) * na
-
-        rays_out = np.concatenate((rays[:, :3], ds_out, rays[:, 6:]), axis=1)
-        rays_out[np.isnan(ds_out[:, 0]), :3] = np.nan
-
-    return rays_out
-
-
-def reflect(rays: NDArray, normals: NDArray) -> NDArray:
-    """
-    Find new rays after reflecting off a Surface defined by a given normal using the law of reflection
-
-    :param rays: nrays x 8 array
-    :param normals: array of size 3, in which case this normal is applied to all rays, or size nrays x 3, in
-      which case each normal is applied to the corresponding ray
-    :return rays_out: nrays x 8 array
-    """
-    normals = np.atleast_2d(normals)
-    rays = np.atleast_2d(rays)
-
-    ds = rays[:, 3:6]
-
-    # basis for computation (na, nb, nc)
-    # na is normal direction, nb orthogonal to normal and ray
-    na = normals
-
-    with np.errstate(invalid="ignore"):
-        nb = np.cross(ds, normals)
-        nb = nb / np.expand_dims(np.linalg.norm(nb, axis=1), axis=1)
-        nb[np.isnan(nb)] = 0
-
-        nc = np.cross(na, nb)
-        nc = nc / np.expand_dims(np.linalg.norm(nc, axis=1), axis=1)
-        nc[np.isnan(nc)] = 0
-
-    # law of reflection
-    # the normal component (i.e. na direction) changes sign
-    mag_na = -np.expand_dims(np.sum(na * ds, axis=1), axis=1)
-    mag_nc = np.expand_dims(np.sum(nc * ds, axis=1), axis=1)
-    ds_out = mag_na * na + mag_nc * nc
-
-    rays_out = np.concatenate((rays[:, :3], ds_out, rays[:, 6:]), axis=1)
-    rays_out[np.isnan(ds_out[:, 0]), :3] = np.nan
-
-    return rays_out
-
-
 # tools for creating ray fans, manipulating rays, etc.
 def get_ray_fan(pt: NDArray,
                 theta_max: float,
@@ -645,7 +561,7 @@ class System:
 
         :param other:
         :param wavelength:
-        :param initial_materials:
+        :param initial_material:
         :param intermediate_material:
         :param final_material:
         :return dx, dy:
@@ -748,7 +664,8 @@ class System:
         # distance travelled dx to the focus
         # then extend the corresponding ray at (h2=0, n2*theta2) backwards until it reaches height h
         # can check this happens at position P2 = f2 + h1/theta2 (where theta2<0 here)
-        # by construction the ray-transfer matrix above has A=0, but in any case we have the relationship C*h1 = n2*theta2
+        # by construction the ray-transfer matrix above has A=0,
+        # but in any case we have the relationship C*h1 = n2*theta2
         # or P2 = f2 + n2/C -> EFL2 = f2 - P2 = -n2/C
 
         # EFL = 1 / C, and this is not affect by right or left-multiplying
@@ -795,10 +712,11 @@ class System:
                    final_material: Material,
                    mode: str = "ray-fan"):
         """
-        Perform auto-focus operation. This function can handle rays which are
+        Perform an auto-focus operation. This function can handle rays which are
         initially collimated or initially diverging
 
         :param wavelength:
+        :param initial_material:
         :param final_material:
         :param mode: "ray-fan", "collimated", "paraxial-focused", or "paraxial-collimated"
         :return f:
@@ -1154,8 +1072,8 @@ class RefractingSurface(Surface):
                   material1: Material,
                   material2: Material) -> NDArray:
         """
-        Given a set of rays, propagate them to the Surface of this object and compute their refraction.
-        Return the update ray array with these two new ray positions
+        Given a set of rays, propagate them to the Surface of this object and compute their refraction
+        using Snell's law. Return the update ray array with these two new ray positions
 
         :param ray_array: nsurfaces x nrays x 8
         :param material1: Material on first side of Surface
@@ -1168,9 +1086,7 @@ class RefractingSurface(Surface):
 
         # get latest rays
         rays = ray_array[-1]
-        # find intersection with Surface
         rays_intersection = self.get_intersect(rays, material1)
-        # compute normals
         normals = self.get_normal(rays_intersection)
 
         # check ray was coming from the "front side"
@@ -1181,11 +1097,41 @@ class RefractingSurface(Surface):
             not_incoming = cos_ray_input < 0
         rays_intersection[not_incoming] = np.nan
 
+        # ######################
         # do refraction
-        rays_refracted = refract(rays_intersection, normals, material1, material2)
+        # ######################
+        # rays_refracted = refract(rays_intersection, normals, material1, material2)
+        ds = rays_intersection[:, 3:6]
+        wls = np.expand_dims(rays_intersection[:, 7], axis=1)
 
-        # append these rays to full array
-        ray_array = np.concatenate((ray_array, np.stack((rays_intersection, rays_refracted), axis=0)), axis=0)
+        # basis for computation (normal, nb, nc)
+        # nb orthogonal to normal and ray
+        with np.errstate(invalid="ignore"):
+            nb = np.cross(ds, normals)
+            nb = nb / np.expand_dims(np.linalg.norm(nb, axis=1), axis=1)
+            nb[np.isnan(nb)] = 0
+
+            nc = np.cross(normals, nb)
+            nc = nc / np.expand_dims(np.linalg.norm(nc, axis=1), axis=1)
+            nc[np.isnan(nc)] = 0
+
+            # snell's law
+            # the tangential component (i.e. nc direction) of k*n*ds is preserved across the interface
+            mag_nc = material1.n(wls) / material2.n(wls) * np.expand_dims(np.sum(nc * ds, axis=1), axis=1)
+            sign_na = np.expand_dims(np.sign(np.sum(normals * ds, axis=1)), axis=1)
+            # normalize outgoing ray direction. By construction nothing in nb direction
+            ds_out = mag_nc * nc + sign_na * np.sqrt(1 - mag_nc ** 2) * normals
+
+            rays_refracted = np.concatenate((rays_intersection[:, :3],
+                                             ds_out,
+                                             rays_intersection[:, 6:]), axis=1)
+            rays_refracted[np.isnan(ds_out[:, 0]), :3] = np.nan
+
+        # append refracted rays to full array
+        ray_array = np.concatenate((ray_array,
+                                    np.stack((rays_intersection,
+                                              rays_refracted), axis=0)),
+                                   axis=0)
 
         return ray_array
 
@@ -1196,7 +1142,8 @@ class ReflectingSurface(Surface):
                   material1: Material,
                   material2: Optional[Material] = None) -> NDArray:
         """
-        Given a set of rays, propagate them to the Surface of this object and compute their refraction.
+        Given a set of rays, propagate them to the Surface of this object and compute their reflection.
+        Find new rays after reflecting off a Surface defined by a given normal using the law of reflection.
         Return the update ray array with these two new ray positions
 
         :param ray_array: nsurfaces x nrays x 8
@@ -1211,15 +1158,42 @@ class ReflectingSurface(Surface):
 
         # get latest rays
         rays = ray_array[-1]
-        # find intersection with Surface
         rays_intersection = self.get_intersect(rays, material1)
-        # compute normals
         normals = self.get_normal(rays_intersection)
-        # do refraction
-        rays_refracted = reflect(rays_intersection, normals)
+
+        # ############################
+        # do reflection
+        # ############################
+        # basis for computation (normal, nb, nc)
+        # nb orthogonal to normal and ray
+        ds = rays_intersection[:, 3:6]
+        with np.errstate(invalid="ignore"):
+            nb = np.cross(ds, normals)
+            nb = nb / np.expand_dims(np.linalg.norm(nb, axis=1), axis=1)
+            nb[np.isnan(nb)] = 0
+
+            nc = np.cross(normals, nb)
+            nc = nc / np.expand_dims(np.linalg.norm(nc, axis=1), axis=1)
+            nc[np.isnan(nc)] = 0
+
+        # law of reflection
+        # the normal component (i.e. na direction) changes sign
+        mag_na = -np.expand_dims(np.sum(normals * ds, axis=1), axis=1)
+        mag_nc = np.expand_dims(np.sum(nc * ds, axis=1), axis=1)
+        ds_out = mag_na * normals + mag_nc * nc
+
+        rays_refracted = np.concatenate((rays_intersection[:, :3],
+                                   ds_out,
+                                   rays_intersection[:, 6:]),
+                                  axis=1)
+        rays_refracted[np.isnan(ds_out[:, 0]), :3] = np.nan
 
         # append these rays to full array
-        ray_array = np.concatenate((ray_array, np.stack((rays_intersection, rays_refracted), axis=0)), axis=0)
+        ray_array = np.concatenate((ray_array,
+                                    np.stack((rays_intersection,
+                                              rays_refracted),
+                                             axis=0)),
+                                   axis=0)
 
         return ray_array
 
@@ -1633,9 +1607,11 @@ class PerfectLens(RefractingSurface):
         # lens Surface, back focal plane (i.e. after the lens)
         # #####################################
         front_focal_pts = (np.expand_dims(self.center, axis=0) -
-                           np.expand_dims(self.normal, axis=0) * self.focal_len * np.expand_dims(material1.n(wls), axis=1))
+                           np.expand_dims(self.normal, axis=0) * self.focal_len *
+                           np.expand_dims(material1.n(wls), axis=1))
         back_focal_pts = (np.expand_dims(self.center, axis=0) +
-                          np.expand_dims(self.normal, axis=0) * self.focal_len * np.expand_dims(material2.n(wls), axis=1))
+                          np.expand_dims(self.normal, axis=0) * self.focal_len *
+                          np.expand_dims(material2.n(wls), axis=1))
 
         # #####################################
         # find position rays intersect the object plane (front focal plane)
@@ -1674,7 +1650,9 @@ class PerfectLens(RefractingSurface):
         # get unit vector
         to_normalize = r1_norm != 0
         r1_uvec = np.array(r1_vec, copy=True)
-        r1_uvec[to_normalize] = r1_uvec[to_normalize] / np.expand_dims(np.linalg.norm(r1_uvec[to_normalize], axis=1), axis=1)
+        r1_uvec[to_normalize] = r1_uvec[to_normalize] / np.expand_dims(np.linalg.norm(r1_uvec[to_normalize],
+                                                                                      axis=1),
+                                                                       axis=1)
 
         # sine of angle between incoming ray and the optical axis
         sin_t1 = np.sum(s1_perp_uvec * s1, axis=1)
