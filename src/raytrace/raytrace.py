@@ -1280,12 +1280,18 @@ class FlatSurface(RefractingSurface):
         # plane projected in XZ plane follows this direction
         dv = np.cross(normal_proj, y_hat)
 
-        ts = np.linspace(-self.aperture_rad, self.aperture_rad, 101)
+        if not np.isinf(self.aperture_rad):
+            ts = np.linspace(-self.aperture_rad, self.aperture_rad, 101)
+        else:
+            ts = np.array([0, 1])
 
-        # construct line using broadcasting
+        # construct points on line using broadcasting
         pts = np.expand_dims(self.center, axis=0) + np.expand_dims(ts, axis=1) * np.expand_dims(dv, axis=0)
 
-        ax.plot(pts[:, 2], pts[:, 0], 'k')
+        if not np.isinf(self.aperture_rad):
+            ax.plot(pts[:, 2], pts[:, 0], 'k')
+        else:
+            ax.axline(pts[0, (2, 0)], xy2=pts[1, (2, 0)], color='k')
 
 
 class PlaneMirror(ReflectingSurface):
@@ -1507,7 +1513,6 @@ class PerfectLens(RefractingSurface):
         :param center:
         :param normal:
         :param alpha: maximum angle
-        todo: not sure what is best way to handle that in general. Should it be at lens
         """
         self.focal_len = focal_len
         self.alpha = alpha
