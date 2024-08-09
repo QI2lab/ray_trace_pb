@@ -125,6 +125,24 @@ class Nlak22(Material):
         cs = [0.00585778594, 0.0198546147, 100.8340170]
         super(Nlak22, self).__init__(bs, cs)
 
+class Ebaf11(Material):
+    """
+    https://refractiveindex.info/?shelf=glass&book=HIKARI-BaF&page=E-BAF11
+    """
+
+    def __init__(self):
+        self.params = [2.71954649, -0.0100472501, 0.0200301385,
+                       0.00046586302, -7.51633336e-6, 1.77544989e-6]
+
+    def n(self, wavelength):
+        n_sqr = (self.params[0] +
+                 self.params[1] * wavelength**2 +
+                 self.params[2] * wavelength**-2 +
+                 self.params[3] * wavelength**-4 +
+                 self.params[4] * wavelength**-6 +
+                 self.params[5] * wavelength**-8)
+        return np.sqrt(n_sqr)
+
 
 # flint glasses (high dispersion, high refractive index)
 class Sf10(Material):
@@ -136,6 +154,14 @@ class Sf10(Material):
         cs = [0.0122241457, 0.0595736775, 147.468793]
         super(Sf10, self).__init__(bs, cs)
 
+class Nsf11(Material):
+    """
+    https://www.schott.com/shop/advanced-optics/en/Optical-Glass/N-SF11/c/glass-N-SF11
+    """
+    def __init__(self):
+        bs = [1.737596950, 0.313747346, 1.898781010]
+        cs = [0.013188707, 0.0623068142, 155.23629000]
+        super(Nsf11, self).__init__(bs, cs)
 
 class Nsf6(Material):
     """

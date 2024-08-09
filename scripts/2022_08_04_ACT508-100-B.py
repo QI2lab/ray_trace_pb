@@ -4,7 +4,7 @@ Evaluate Thorlabs achromats
 import numpy as np
 import matplotlib.pyplot as plt
 import raytrace.raytrace as rt
-from raytrace.materials import Nlak22, Bk7, Sf2, Nsf6, Nsf6ht, Sf10, Vacuum
+from raytrace.materials import Nlak22, Bk7, Sf2, Nsf6, Nsf6ht, Sf10, Ebaf11, Nsf11, Vacuum
 
 # radius = 25.4 / 2
 # bfl_thor = 143.68
@@ -22,21 +22,38 @@ from raytrace.materials import Nlak22, Bk7, Sf2, Nsf6, Nsf6ht, Sf10, Vacuum
 #                      names="AC254-150-AB"
 #                      )
 
+# radius = 25.4
+# bfl_thor = 190.6
+# efl_thor = 200
+# design_wavelengths = np.array([0.4861, 0.5876, 0.6563])
+# doublet = rt.Doublet(Bk7(),
+#                      Sf2(),
+#                      radius_crown=106.2,
+#                      radius_flint=-409.4,
+#                      radius_interface=-92.1,
+#                      thickness_crown=10.6,
+#                      thickness_flint=6.0,
+#                      aperture_radius=radius,
+#                      input_collimated=True,
+#                      names="ACT508-200-A"
+#                      )
+
+
 radius = 25.4
-bfl_thor = 190.6
-efl_thor = 200
+bfl_thor = 61.7
+efl_thor = 75
 design_wavelengths = np.array([0.4861, 0.5876, 0.6563])
-doublet = rt.Doublet(Bk7(),
-                     Sf2(),
-                     radius_crown=106.2,
-                     radius_flint=-409.4,
-                     radius_interface=-92.1,
-                     thickness_crown=10.6,
-                     thickness_flint=6.0,
-                     aperture_radius=radius,
-                     input_collimated=True,
-                     names="ACT508-200-A"
-                     )
+doublet = rt.Doublet(Ebaf11(),
+                Nsf11(),
+                radius_crown=50.8,
+                radius_flint=-247.7,
+                radius_interface=-41.7,
+                thickness_crown=20.,
+                thickness_flint=3.,
+                aperture_radius=radius,
+                input_collimated=True,
+                names="AC508-075-A-ML")
+
 
 # radius = 25.4
 # bfl_thor = 91.5
