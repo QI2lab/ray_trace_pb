@@ -82,12 +82,12 @@ system = system.concatenate(rt.FlatSurface([0, 0, 0],
 # field curvature
 # ########################
 
-nrays = 11
-heights = np.linspace(0, 15, 11)
+nrays = 5
+heights = np.linspace(0, 16, 21, endpoint=True)
 rays = []
 for h in heights:
     rays.append(rt.get_ray_fan(np.array([h, 0, 0]),
-                               3*np.pi/ 180,
+                               1*np.pi/ 180,
                                nrays,
                                wlen
                                )
@@ -108,15 +108,15 @@ ints = rt.intersect_rays(rays_out[-1, nrays // 2::nrays],
 # plot field curvature
 figh = plt.figure()
 ax = figh.add_subplot(1, 1, 1)
-ax.plot(heights, ints[:, -1])
+ax.plot(heights, ints[:, -1] - ints[0, -1])
 ax.set_xlabel("Object position (mm)")
-ax.set_ylabel("Focus z-position (mm)")
+ax.set_ylabel("Focus z-position shift (mm)")
 
 # ########################
 # distortion
 # ########################
 dxy = 3
-nlines = 15
+nlines = 16
 nrays_line = nlines * 11
 rays_grid = []
 for ii in range(nlines):
