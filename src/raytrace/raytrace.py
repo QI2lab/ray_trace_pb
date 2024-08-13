@@ -573,7 +573,8 @@ class System:
                                           wavelength: float,
                                           initial_material: Material,
                                           intermediate_material: Material,
-                                          final_material: Material) -> (float, float):
+                                          final_material: Material,
+                                          axis=None) -> (float, float):
         """
         Given two sets of surfaces (e.g. two lenses) determine the distance which should be inserted between them
         to give a System which converts collimated rays to collimated rays
@@ -583,11 +584,13 @@ class System:
         :param initial_material:
         :param intermediate_material:
         :param final_material:
+        :param axis:
         :return dx, dy:
         """
         mat1 = self.get_ray_transfer_matrix(wavelength, initial_material, intermediate_material)
         mat2 = other.get_ray_transfer_matrix(wavelength, intermediate_material, final_material)
 
+        # todo: replace with axis
         dx = -(mat1[0, 0] / mat1[1, 0] + mat2[1, 1] / mat2[1, 0]) * intermediate_material.n(wavelength)
         dy = -(mat1[2, 2] / mat1[3, 2] + mat2[3, 3] / mat2[3, 2]) * intermediate_material.n(wavelength)
 
@@ -627,7 +630,8 @@ class System:
         :param wavelength:
         :param initial_material:
         :param final_material:
-        :param axis: axis which should be a direction orthogonal to the main beam direction
+        :param axis: axis which should be a direction orthogonal to the main beam direction. Only relevant for
+         non-symmetric optics
         :return abcd_matrix:
         """
         surfaces = self.surfaces
@@ -653,28 +657,27 @@ class System:
     def get_cardinal_points(self,
                             wavelength: float,
                             initial_material: Material,
-                            final_material: Material):
+                            final_material: Material,
+                            axis=None):
         """
 
         :param wavelength:
         :param initial_material:
         :param final_material:
+        :param axis: for non-radially symmetric objects, which axis
         :return fp1, fp2, pp1, pp2, np1, np2, efl1, efl2:
         """
-        # todo: add nodal points computation
+        abcd_mat = self.get_ray_transfer_matrix(wavelength, initial_material, final_material)
+        abcd_inv = self.reverse().get_ray_transfer_matrix(wavelength, final_material, initial_material)
+        n_obj = initial_material.n(wavelength)
+        n_img = final_material.n(wavelength)
+
         # ###############################################
         # find focal point to the right of the lens
         # ###############################################
-        abcd_mat = self.get_ray_transfer_matrix(wavelength, initial_material, final_material)
-        n = final_material.n(wavelength)
-
         # if I left multiply my ray transfer matrix by free space matrix, then combined matrix has lens/focal form
-        # for certain distance of propagation dx. Find this by setting A + d/n * C = 0
-        d2x = -abcd_mat[0, 0] / abcd_mat[1, 0] * n
-        d2y = -abcd_mat[2, 2] / abcd_mat[3, 2] * n
-
-        abcd_mat_x = get_free_space_abcd(d2x, n).dot(abcd_mat)
-        abcd_mat_y = get_free_space_abcd(d2y, n).dot(abcd_mat)
+        # for certain distance of propagation dx. Find this by setting A + d/n_img * C = 0
+        d2 = -abcd_mat[0, 0] / abcd_mat[1, 0] * n_img
 
         # can also find the principal plane with the following construction
         # take income ray at (h1, n1*theta1 = 0). Consider the ray-transfer matrix which combines the optic and the
@@ -685,41 +688,28 @@ class System:
         # but in any case we have the relationship C*h1 = n2*theta2
         # or P2 = f2 + n2/C -> EFL2 = f2 - P2 = -n2/C
 
-        # EFL = 1 / C, and this is not affect by right or left-multiplying
-        # the ray-transfer matrix by free space propagation
-        efl2_x = -n / abcd_mat_x[1, 0]
-        efl2_y = -n / abcd_mat_y[3, 2]
-
-        d2 = 0.5 * (d2x + d2y)
-        efl2 = 0.5 * (efl2_x + efl2_y)
-
-        # todo: is this still right in presence of RI?
+        # EFL = 1 / C, and this is not affect by multiplying the ray-transfer matrix by free-space propagation
+        efl2 = -n_img / abcd_mat[1, 0]
         fp2 = self.surfaces[-1].paraxial_center + d2 * self.surfaces[-1].output_axis
 
-        # find principal plane to the right
+        # find principal plane image space
         pp2 = fp2 - efl2 * self.surfaces[-1].output_axis
-        np2 = None
 
-        # ##################################
-        # find focal point to the left of the lens
-        # ##################################
-        abcd_inv = self.reverse().get_ray_transfer_matrix(wavelength, final_material, initial_material)
+        # find nodal point in image space
+        d2_nodal = (n_img - n_obj * abcd_inv[1, 1]) / abcd_inv[1, 0]
+        np2 = self.surfaces[-1].paraxial_center + d2_nodal * self.surfaces[-1].output_axis
 
-        d1x = -abcd_inv[0, 0] / abcd_inv[1, 0] * n
-        d1y = -abcd_inv[2, 2] / abcd_inv[3, 2] * n
-
-        abcd_mat_x_right = get_free_space_abcd(d1x, n).dot(abcd_inv)
-        abcd_mat_y_right = get_free_space_abcd(d1y, n).dot(abcd_inv)
-        efl1_x = -n / abcd_mat_x_right[1, 0]
-        efl1_y = -n / abcd_mat_y_right[3, 2]
-
-        d1 = 0.5 * (d1x + d1y)
-        efl1 = 0.5 * (efl1_x + efl1_y)
+        # find focal point in object space
+        d1 = -abcd_inv[0, 0] / abcd_inv[1, 0] * n_obj
+        efl1 = -n_obj / abcd_inv[1, 0]
         fp1 = self.surfaces[0].paraxial_center - d1 * self.surfaces[0].input_axis
 
-        # find principal plane to the left of the lens
+        # find principal plane in object space
         pp1 = fp1 + efl1 * self.surfaces[0].input_axis
-        np1 = None
+
+        # find nodal point in object space
+        d1_nodal = (n_obj - n_img * abcd_mat[1, 1]) / abcd_mat[1, 0]
+        np1 = self.surfaces[0].paraxial_center - d1_nodal * self.surfaces[0].output_axis
 
         return fp1, fp2, pp1, pp2, np1, np2, efl1, efl2
 
@@ -1450,12 +1440,11 @@ class SphericalSurface(RefractingSurface):
         B = 2 * (dx * (xo - xc) + dy * (yo - yc) + dz * (zo - zc))
         C = (xo - xc)**2 + (yo - yc)**2 + (zo - zc)**2 - self.radius**2
 
-        # we only want t > 0, since these are the forward points for the rays
-        # and of the t > 0, we want the smallest t
-        ts = xp.stack((0.5 * (-B + xp.sqrt(B**2 - 4 * A * C)),
-                       0.5 * (-B - xp.sqrt(B**2 - 4 * A * C))), axis=1)
-
         with np.errstate(invalid="ignore"):
+            # we only want t > 0, since these are the forward points for the rays
+            # and of the t > 0, we want the smallest t
+            ts = xp.stack((0.5 * (-B + xp.sqrt(B**2 - 4 * A * C)),
+                           0.5 * (-B - xp.sqrt(B**2 - 4 * A * C))), axis=1)
             ts[ts < 0] = np.inf
 
         t_sol = xp.min(ts, axis=1)
