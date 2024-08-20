@@ -467,7 +467,8 @@ class System:
                  surfaces: list,
                  materials: list[Material],
                  names: list[str] = None,
-                 surfaces_by_name=None):
+                 surfaces_by_name=None,
+                 aperture_stop: Optional[int] = None):
         """
 
         :param surfaces: length n
@@ -481,6 +482,7 @@ class System:
 
         self.surfaces = surfaces
         self.materials = materials
+        self.aperture_stop = aperture_stop
 
         if names is None:
             self.names = [""]
@@ -535,15 +537,16 @@ class System:
         # todo: how to make type hints work?
 
         # specify distance between surfaces as distances between the paraxial foci
-
         if isinstance(other, System):
             new_surfaces = [copy.deepcopy(s) for s in other.surfaces]
             new_materials = other.materials
+            other_stop = other.aperture_stop
             new_surfaces_by_name = other.surfaces_by_name
             new_names = other.names
         elif isinstance(other, Surface):
             new_surfaces = [copy.deepcopy(other)]
             new_materials = []
+            other_stop = None
             new_surfaces_by_name = np.array([0])
             new_names = [""]
         else:
@@ -563,10 +566,55 @@ class System:
         surfaces_by_name = np.concatenate((self.surfaces_by_name,
                                            new_surfaces_by_name + np.max(self.surfaces_by_name) + 1))
 
+        if self.aperture_stop is None:
+            if other_stop is None:
+                aperture_stop = self.aperture_stop
+            else:
+                aperture_stop = other_stop + len(self.surfaces)
+        else:
+            aperture_stop = self.aperture_stop
+
         return System(self.surfaces + new_surfaces,
                       self.materials + [material] + new_materials,
                       names=self.names + new_names,
-                      surfaces_by_name=surfaces_by_name)
+                      surfaces_by_name=surfaces_by_name,
+                      aperture_stop=aperture_stop)
+
+    def set_aperture_stop(self,
+                          surface_index: int):
+        self.aperture_stop = surface_index
+
+    def seidel_third_order(self,
+                           wavelength: float,
+                           initial_material: Material,
+                           final_material: Material,
+                           ):
+
+        if self.aperture_stop is None:
+            raise ValueError("aperture_stop was None, but aperture_stop must be provided to "
+                             "compute Seidel aberrations")
+
+        # compute marginal ray
+        rt_stop = np.diag([1, 1, 1, 1, 1])
+        for ii in range(self.aperture_stop):
+            if ii == 0:
+                n1 = initial_material.n(wavelength)
+            else:
+                n1 = self.materials[ii].n(wavelength)
+            n2 = self.materials[ii].n(wavelength)
+            rt_next = self.surfaces[ii].get_ray_transfer_matrix(n1, n2)
+            rt_stop = rt_next.dot(rt_stop)
+
+        h_stop = self.surfaces[self.aperture_stop].aperture_rad
+        # B * u = h_stop
+        # D * u = u_stop
+        u = h_stop / rt_stop[0, 1]
+        u_stop = rt_stop[1, 1] * u
+
+        for ii, s in enumerate(self.surfaces):
+            pass
+
+
 
     def find_paraxial_collimated_distance(self,
                                           other,
