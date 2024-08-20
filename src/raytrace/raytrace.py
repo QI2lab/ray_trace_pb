@@ -643,7 +643,6 @@ class System:
 
         u_start = h_stop / rt_stop[0, 1] / n_start # B * n_start * u_start = h_stop
         # handle infinite conjugates
-        # todo: still not totally doing this ...
         if np.abs(u_start) < 1e-12 == 0.:
             h_start = h_stop / rt_stop[0, 0]
         else:
