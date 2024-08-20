@@ -7,8 +7,7 @@ import os
 import sys
 from raytrace import __version__
 
-# sys.path.insert(0, os.path.abspath('../../pycromanager/'))
-sys.path.insert(0, os.path.abspath("../raytrace"))
+sys.path.insert(0, os.path.abspath("../src/raytrace"))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -31,6 +30,8 @@ master_doc = "index"
 autoclass_content = "both"
 
 autodoc_typehints = "description"
+
+autodoc_member_order = 'bysource'
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output

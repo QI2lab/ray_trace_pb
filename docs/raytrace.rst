@@ -5,5 +5,13 @@ Raytracing API
    :members:
 
 .. currentmodule:: raytrace.raytrace
-.. autoclass:: system
+.. autoclass:: System
+   :members:
+
+.. currentmodule:: raytrace.raytrace
+.. autoclass:: Surface
+   :members:
+
+.. currentmodule:: raytrace.raytrace
+.. autoclass:: Doublet
    :members:

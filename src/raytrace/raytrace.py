@@ -264,9 +264,8 @@ def get_collimated_rays(pt: NDArray,
 
 def intersect_rays(ray1: array, ray2: array) -> array:
     """
-    Find intersection point between two rays, assuming free space propagation
-
-    if either s or t is negative then these rays previously intersected
+    Find intersection point between two rays, assuming free space propagation. If either s or t is negative
+    then these rays previously intersected
 
     :param ray1:
     :param ray2:
@@ -411,8 +410,8 @@ def propagate_ray2plane(rays: array,
 def ray_angle_about_axis(rays: array, reference_axis: array) -> (array, array):
     """
     Given a set of rays, compute their angles relative to a given axis, and compute the orthogonal direction to the
-
     axis which the ray travels in
+
     :param rays:
     :param reference_axis:
     :return angles, na:

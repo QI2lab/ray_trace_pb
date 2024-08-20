@@ -11,6 +11,7 @@ Welcome to raytrace's documentation!
    :caption: Contents:
 
    raytrace
+   materials
 
 
 Indices and tables
