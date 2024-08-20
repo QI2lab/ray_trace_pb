@@ -69,7 +69,7 @@ system = rt.System([rt.FlatSurface([0, 0, 0], [0, 0, 1], 25.4)],
 system = system.concatenate(l1, Vacuum(), -f1_left)
 
 # find collimated distance between l1 and l2
-d = l2.find_paraxial_collimated_distance(l2, wlen, Vacuum(), Vacuum(), Vacuum())[0]
+d = l2.find_paraxial_collimated_distance(l2, wlen, Vacuum(), Vacuum(), Vacuum())
 
 # add flat surface at Fourier plane
 system = system.concatenate(rt.FlatSurface([0, 0, 0], [0, 0, 1], np.inf),

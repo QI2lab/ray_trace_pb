@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import mcsim.analysis.gauss_beam as gb
 import raytrace.raytrace as rt
 from raytrace.materials import Nsf11, Ebaf11, Vacuum
 
@@ -50,7 +51,33 @@ ind_pupil = len(system.surfaces)
 # add lens #2
 system = system.concatenate(l2, Vacuum(), d - wd_right)
 
+# last surface at focal plane
+c2 = l2.get_cardinal_points(wlen, Vacuum(), Vacuum())
+wd2 = c2[1][2] - l2.surfaces[-1].paraxial_center[2]
+
+system = system.concatenate(rt.FlatSurface([0, 0, 0],
+                                           [0, 0, 1],
+                                           25.4),
+                            Vacuum(),
+                            wd2)
+
 # set stop
 system.set_aperture_stop(ind_pupil)
 
-system.seidel_third_order()
+# ######################################
+#
+rays_in = rt.get_ray_fan([0, 0, 0], 3 * np.pi/180, 101, wlen)
+rays = system.ray_trace(rays_in, Vacuum(), Vacuum())
+system.plot(rays)
+
+
+q_in = gb.get_q(10e-3, 0, wlen, 0, 1)
+qs = system.gaussian_paraxial(q_in,
+                              wlen,
+                              Vacuum(),
+                              Vacuum(),
+                              print_results=True)
+
+system.seidel_third_order(wlen,
+                          Vacuum(),
+                          Vacuum())

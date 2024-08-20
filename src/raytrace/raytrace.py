@@ -590,11 +590,9 @@ class System:
         mat1 = self.get_ray_transfer_matrix(wavelength, initial_material, intermediate_material)
         mat2 = other.get_ray_transfer_matrix(wavelength, intermediate_material, final_material)
 
-        # todo: replace with axis
-        dx = -(mat1[0, 0] / mat1[1, 0] + mat2[1, 1] / mat2[1, 0]) * intermediate_material.n(wavelength)
-        dy = -(mat1[2, 2] / mat1[3, 2] + mat2[3, 3] / mat2[3, 2]) * intermediate_material.n(wavelength)
-
-        return dx, dy
+        # todo: implement axis
+        d = -(mat1[0, 0] / mat1[1, 0] + mat2[1, 1] / mat2[1, 0]) * intermediate_material.n(wavelength)
+        return d
 
     def ray_trace(self,
                   rays: array,
@@ -1106,13 +1104,11 @@ class Surface:
         # idea: form full ABCD matrix as free prop in n2 * mat * free prop in n1, then set B = 0
         with np.errstate(divide="ignore"):
             if not np.isinf(s):
-                sp_x = np.atleast_1d(-n2 * (-mat[0, 0] * s / n1 + mat[0, 1]) / np.array(-mat[1, 0] * s / n1 + mat[1, 1]))
-                sp_y = np.atleast_1d(-n2 * (-mat[2, 2] * s / n1 + mat[2, 3]) / np.array(-mat[3, 2] * s / n1 + mat[3, 3]))
+                sp = np.atleast_1d(-n2 * (-mat[0, 0] * s / n1 + mat[0, 1]) / np.array(-mat[1, 0] * s / n1 + mat[1, 1]))
             else:
-                sp_x = np.atleast_1d(-n2 * mat[0, 0] / mat[1, 0])
-                sp_y = np.atleast_1d(-n2 * mat[2, 2] / mat[3, 2])
+                sp = np.atleast_1d(-n2 * mat[0, 0] / mat[1, 0])
 
-        return sp_x
+        return sp
 
     def is_pt_on_surface(self, pts: array):
         """
