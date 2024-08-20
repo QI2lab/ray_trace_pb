@@ -38,94 +38,7 @@ except ImportError:
     cp = None
     array = NDArray
 
-# def compute_third_order_seidel(surfaces: list,
-#                                materials: list[Material],
-#                                wavelength: float):
-#     """
-#
-#     :param surfaces:
-#     :param materials:
-#     :param wavelength:
-#     :return aberrations_3rd:
-#     """
-#     # first check where the aperture stop is
-#     is_ap_stop = [s.is_aperture_stop for s in surfaces]
-#
-#     if not np.any(is_ap_stop):
-#         raise ValueError("none of the surfaces were labelled as the aperture stop")
-#     if np.sum(is_ap_stop) > 1:
-#         raise ValueError("more than one of the surfaces was labelled as the aperture stop")
-#
-#     istop = int(np.where(is_ap_stop)[0])
-#
-#     # find entrance pupil
-#     surfaces_before_stop = surfaces[:istop + 1]
-#     materials_before_stop = materials[:istop + 2]
-#
-#     surfaces_before_stop, materials_before_stop = get_reversed_system(surfaces_before_stop, materials_before_stop)
-#
-#     # to avoid refracting through the stop again, modify the index of refraction
-#     materials_before_stop[0] = materials_before_stop[1]
-#
-#     s_temp, _ = auto_focus(surfaces_before_stop, materials_before_stop, wavelength, mode="paraxial-focused")
-#     # correct entrance pupil directions
-#     entrance_pupil, _ = get_reversed_system([s_temp[-1]], [1, 1])
-#     entrance_pupil = entrance_pupil[0]
-#
-#     # find exit pupil
-#     # surfaces_after_stop = surfaces[istop:]
-#     # ns_after_stop = materials[istop - 1:]
-#     #
-#     # s_temp, _ = auto_focus(surfaces_after_stop, ns_after_stop, mode="paraxial")
-#     # exit_pupil = s_temp[-1]
-#
-#     # needed quantities
-#     nsurfaces = len(surfaces)
-#     aberrations_3rd = np.zeros((nsurfaces, 5))
-#     s = np.zeros(nsurfaces)  # object points per Surface
-#     sp = np.zeros(nsurfaces)  # image points per Surface
-#     h = np.zeros(nsurfaces)  # h1 = s1 / (t1 - s1) where t = distance from entrance pupil to Surface vertex
-#     H = np.zeros(nsurfaces)  # H1 = t1 / no
-#     t = np.zeros(nsurfaces)
-#     tp = np.zeros(nsurfaces)
-#     d = np.zeros(nsurfaces - 1)
-#
-#     # initialize values for first Surface
-#     s[0] = surfaces[0].paraxial_center[2]
-#     sp[0] = surfaces[0].solve_img_eqn(s[0], materials[0], materials[1])
-#     t[0] = entrance_pupil.paraxial_center[2] - surfaces[0].paraxial_center[2]
-#     tp[0] = surfaces[0].solve_img_eqn(t[0], materials[0], materials[1])
-#     h[0] = s[0] / (t[0] - s[0])
-#     H[0] = t[0] / materials[0]
-#
-#     # compute subsequent values of image positions and pupil positions
-#     for ii in range(1, len(h)):
-#         # d[ii] is the distance between ii and ii + 1 surfaces
-#         d[ii - 1] = surfaces[ii].paraxial_center[2] - surfaces[ii - 1].paraxial_center[2]
-#
-#         # new object is previous image relative to new surfaces
-#         s[ii] = sp[ii - 1] - d[ii - 1]
-#         sp[ii] = surfaces[ii].solve_img_eqn(s[ii], materials[ii], materials[ii + 1])
-#         # new pupil is previous image relative to new surfaces
-#         t[ii] = tp[ii - 1] - d[ii - 1]
-#         tp[ii] = surfaces[ii].solve_img_eqn(t[ii], materials[ii], materials[ii + 1])
-#
-#         # see Born and Wolf chapter 5.5 eq's (9) and (16)
-#         # h[ii] = h[ii - 1] * s[ii] / sp[ii - 1] # recursion has problem if one is zero...
-#         h[ii] = s[ii] / (t[ii] - s[ii])
-#         # H[ii] = H[ii - 1] * t[ii] / tp[ii - 1]
-#         H[ii] = t[ii] / materials[ii]
-#
-#     # solve for aberrations
-#     for ii in range(nsurfaces):
-#         aberrations_3rd[ii] = surfaces[ii].get_seidel_third_order_fns(
-#                                             materials[ii], materials[ii + 1],
-#                                             s[ii], sp[ii], t[ii], tp[ii], h[ii], H[ii])
-#
-#     return aberrations_3rd
 
-
-# propagation and refraction
 def get_free_space_abcd(d: float, n: float = 1.):
     """
     Compute the ray-transfer (ABCD) matrix for free space beam propagation
@@ -641,17 +554,17 @@ class System:
         n_stop = self.materials[self.aperture_stop].n(wavelength)
         h_stop = self.surfaces[self.aperture_stop].aperture_rad
 
-        u_start = h_stop / rt_stop[0, 1] / n_start # B * n_start * u_start = h_stop
+        u_start = h_stop / rt_stop[0, 1] / n_start  # B * n_start * u_start = h_stop
         # handle infinite conjugates
         if np.abs(u_start) < 1e-12 == 0.:
             h_start = h_stop / rt_stop[0, 0]
         else:
             h_start = 0.
-        u_stop = rt_stop[1, 1] * (n_start * u_start) / n_stop # D * n_start * u_start = u_stop
+        u_stop = rt_stop[1, 1] * (n_start * u_start) / n_stop  # D * n_start * u_start = u_stop
 
         # compute chief ray
         h_chief = object_height
-        u_chief = -rt_stop[0, 0] / rt_stop[0, 1] / n_start * h_chief # A*h + B*n*u = h_chief = 0
+        u_chief = -rt_stop[0, 0] / rt_stop[0, 1] / n_start * h_chief  # A*h + B*n*u = h_chief = 0
         u_chief_stop = (h_chief * rt_stop[1, 0] + n_start * u_chief * rt_stop[1, 1]) / n_stop
 
         # compute aberrations following "Fundamentals of Optical Design" by Michael J. Kidger, ch 6
@@ -659,6 +572,7 @@ class System:
         # z_obj, h_obj, u_obj, z_img, h_img, u_img, h_surface, abbe invariant
         paraxial_data = np.zeros((len(self.surfaces), 8))
 
+        # todo: don't actually need the imaging position data ... just need h,u,n and h',u',n'
         z_img = -object_distance
         u_img = u_start
         h_img = h_start
@@ -715,7 +629,6 @@ class System:
             # the actual wavefront aberration is 1/8 times the following:
             aberrations[ii, 0] = -abbe_inv**2 * h_surf * (u_img / n_img - u_obj / n_obj)
 
-
         if print_results:
             print("surfaces,"
                   " spherical,"
@@ -761,7 +674,6 @@ class System:
                       )
 
         return aberrations
-
 
     def find_paraxial_collimated_distance(self,
                                           other,
@@ -823,6 +735,7 @@ class System:
         :param wavelength:
         :param initial_material:
         :param final_material:
+        :param print_results:
         :return:
         """
 
@@ -863,7 +776,6 @@ class System:
                       f"{np.sqrt(wo_sqr[ii]):10.6g}, "
                       f"{z[ii]:10.6g}, "
                       f"{zr[ii]:10.6g}")
-
 
         return qs
 
@@ -968,7 +880,7 @@ class System:
                    final_material: Material,
                    mode: str = "ray-fan"):
         """
-        Perform an auto-focus operation. This function can handle rays which are
+        Perform an autofocus operation. This function can handle rays which are
         initially collimated or initially diverging
 
         :param wavelength:
@@ -1258,13 +1170,6 @@ class Surface:
         """
         pass
 
-    def get_seidel_third_order_fns(self):
-        """
-
-        :return:
-        """
-        raise NotImplementedError()
-
     def get_ray_transfer_matrix(self, n1: float, n2: float):
         """
 
@@ -1510,32 +1415,6 @@ class FlatSurface(RefractingSurface):
                         [0, 0, 0, 0, 1]])
         return mat
 
-    def get_seidel_third_order_fns(self, n1, n2, s, sp, t, tp, h, H):
-        if s != 0:
-            K = n1 * (-1 / s)  # abbe invariant for image/obj point
-            c1 = (1 / (n2 * sp) - 1 / (n1 * s))
-        else:  # in this case h = 0, and K only enters with a factor of h so doesn't matter...
-            K = 0
-            c1 = 0
-
-        if t != 0:
-            L = n1 * (-1 / t)  # abbe invariant for pupil/pupil image point
-            c2 = (1 / (n2 * tp) - 1 / (n1 * t))
-        else:  # in this case H = 0, and L only enters with a factor of H so doesn't matter...
-            L = 0
-            c2 = 0
-
-        # these are B, F, C, D, E
-        # i.e. spherical, coma, astigmatism and curvature of field, and distortion
-        coeffs = np.array([0.5 * h ** 4 * K ** 2 * c1,
-                           0.5 * H * h ** 3 * K * L * c1,
-                           0.5 * H ** 2 * h ** 2 * L ** 2 * c1,
-                           0.5 * H ** 2 * h ** 2 * (K * L * c1 - K * (K - L) * c2),
-                           0.5 * H ** 3 * h * (L ** 2 * c1 - L * (K - L) * c2),
-                           ])
-
-        return coeffs
-
     def draw(self, ax: Axes):
         # take Y = 0 portion of Surface
         y_hat = np.array([0, 1, 0])
@@ -1550,7 +1429,7 @@ class FlatSurface(RefractingSurface):
         else:
             ts = np.array([0, 1])
 
-        # construct points on line using broadcasting
+        # construct points on-line using broadcasting
         pts = np.expand_dims(self.center, axis=0) + np.expand_dims(ts, axis=1) * np.expand_dims(dv, axis=0)
 
         if not np.isinf(self.aperture_rad):
@@ -1716,32 +1595,6 @@ class SphericalSurface(RefractingSurface):
         diff = (pts[:, 0] - self.center[0]) ** 2 + (pts[:, 1] - self.center[1]) ** 2 + (pts[:, 2] - self.center[2]) ** 2
         on_surface = xp.abs(diff - self.radius**2) < 1e-12
         return on_surface
-
-    def get_seidel_third_order_fns(self, n1, n2, s, sp, t, tp, h, H):
-        if s != 0:
-            K = n1 * (1 / self.radius - 1 / s)  # abbe invariant for image/obj point
-            c1 = (1 / (n2 * sp) - 1 / (n1 * s))
-        else:  # in this case h = 0, and K only enters with a factor of h so doesn't matter...
-            K = 0
-            c1 = 0
-
-        if t != 0:
-            L = n1 * (1 / self.radius - 1 / t)  # abbe invariant for pupil/pupil image point
-            c2 = (1 / (n2 * tp) - 1 / (n1 * t))
-        else:  # in this case H = 0, and L only enters with a factor of H so doesn't matter...
-            L = 0
-            c2 = 0
-
-        # B, F, C, D, E
-        # i.e. spherical, coma, astigmatism and curvature of field, and distortion
-        coeffs = np.array([0.5 * h**4 * K**2 * c1,
-                           0.5 * H * h**3 * K * L * c1,
-                           0.5 * H**2 * h**2 * L**2 * c1,
-                           0.5 * H**2 * h**2 * (K * L * c1 - K * (K - L) * c2),
-                           0.5 * H**3 * h * (L**2 * c1 - L * (K - L) * c2),
-                           ])
-
-        return coeffs
 
     def get_ray_transfer_matrix(self, n1: float, n2: float) -> NDArray:
         # test if we are going from "inside the sphere" to "outside the sphere" i.e. ray is striking the concave side
