@@ -618,6 +618,66 @@ class System:
 
         return rays
 
+    def gaussian_paraxial(self,
+                          q_in: complex,
+                          wavelength: float,
+                          initial_material: Material,
+                          final_material: Material,
+                          print_results: bool = False):
+        """
+
+        :param q_in:
+        :param wavelength:
+        :param initial_material:
+        :param final_material:
+        :return:
+        """
+
+        ns = np.zeros(len(self.surfaces) + 1)
+        qs = np.zeros(len(self.surfaces) + 1, dtype=complex)
+        qs[0] = q_in
+        # todo: loop over surfaces and print data
+        test = np.array([[1, 0], [0, 1]])
+        for ii, s in enumerate(self.surfaces):
+            if ii == 0:
+                n1 = initial_material.n(wavelength)
+            else:
+                n1 = self.materials[ii - 1].n(wavelength)
+
+            if ii < len(self.surfaces) - 1:
+                n2 = self.materials[ii].n(wavelength)
+                d = np.linalg.norm(self.surfaces[ii + 1].paraxial_center - s.paraxial_center)
+            else:
+                n2 = final_material.n(wavelength)
+                d = 0.
+
+            abcd = get_free_space_abcd(d, n2).dot(s.get_ray_transfer_matrix(n1, n2))[:2, :2]
+            qs[ii + 1] = (qs[ii] * abcd[0, 0] + abcd[0, 1]) / (qs[ii] * abcd[1, 0] + abcd[1, 1])
+            ns[ii] = n1
+            ns[ii + 1] = n2
+
+            test = abcd.dot(test)
+
+        if print_results:
+            import mcsim.analysis.gauss_beam as gb
+            r, w_sqr, wo_sqr, z, zr = gb.q2beam_params(qs, wavelength, ns)
+
+            print("surfaces \t R,"
+                  "          w,"
+                  "         wo,"
+                  "          z,"
+                  "          zr")
+            for ii in range(len(self.surfaces) + 1):
+                print(f"{ii:02d}: "
+                      f"{r[ii]:10.6g}, "
+                      f"{np.sqrt(w_sqr[ii]):10.6g}, "
+                      f"{np.sqrt(wo_sqr[ii]):10.6g}, "
+                      f"{z[ii]:10.6g}, "
+                      f"{zr[ii]:10.6g}")
+
+
+        return qs
+
     def get_ray_transfer_matrix(self,
                                 wavelength: float,
                                 initial_material: Material,
