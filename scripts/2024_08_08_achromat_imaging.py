@@ -72,10 +72,12 @@ system = system.concatenate(l1, Vacuum(), -f1_left)
 d = l2.find_paraxial_collimated_distance(l2, wlen, Vacuum(), Vacuum(), Vacuum())
 
 # add flat surface at Fourier plane
-system = system.concatenate(rt.FlatSurface([0, 0, 0], [0, 0, 1], np.inf),
+system = system.concatenate(rt.FlatSurface([0, 0, 0],
+                                           [0, 0, 1],
+                                           25.4),
                             Vacuum(),
                             wd_right)
-ind_pupil = len(system.surfaces)
+ind_pupil = len(system.surfaces) - 1
 
 # add lens #2
 system = system.concatenate(l2, Vacuum(), d - wd_right)
@@ -90,6 +92,28 @@ system = system.concatenate(rt.FlatSurface([0, 0, 0],
                                            25.4),
                             Vacuum(),
                             wd2)
+system.set_aperture_stop(ind_pupil)
+
+# ########################
+# gaussian beam analysis
+# ########################
+# q_in = gb.get_q(10e-3, 0, wlen, 0, 1)
+# qs = system.gaussian_paraxial(q_in,
+#                               wlen,
+#                               Vacuum(),
+#                               Vacuum(),
+#                               print_results=True)
+
+# ########################
+# seidel analysis
+# ########################
+abs = system.seidel_third_order(wlen,
+                                Vacuum(),
+                                Vacuum(),
+                                print_results=True,
+                                print_paraxial_data=True,
+                                )
+
 
 # ########################
 # field curvature
