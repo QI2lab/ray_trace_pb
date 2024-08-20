@@ -143,6 +143,16 @@ class Ebaf11(Material):
                  self.params[5] * wavelength**-8)
         return np.sqrt(n_sqr)
 
+class Nsk11(Material):
+    """
+    crown glass
+    https://refractiveindex.info/?shelf=glass&book=SCHOTT-SK&page=N-SK11
+    """
+    def __init__(self):
+        bs = [1.17963631, 0.229817295, 0.935789652]
+        cs = [0.00680282081, 0.0219737205, 101.513232]
+        super(Nsk11, self).__init__(bs, cs)
+
 
 # flint glasses (high dispersion, high refractive index)
 class Sf10(Material):
@@ -204,3 +214,14 @@ class Sf2(Material):
         bs = [1.40301821, 0.231767504, 0.939056586]
         cs = [0.0105795466, 0.0493226978, 112.405955]
         super(Sf2, self).__init__(bs, cs)
+
+
+class Nsf19(Material):
+    """
+    flint glass
+    https://refractiveindex.info/?shelf=glass&book=SCHOTT-SF&page=N-SF19
+    """
+    def __init__(self):
+        bs = [1.52005444, 0.17573947, 1.43623424]
+        cs = [0.01096144, 0.0593248486, 126.795151]
+        super(Nsf19, self).__init__(bs, cs)

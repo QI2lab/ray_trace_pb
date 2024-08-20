@@ -14,7 +14,8 @@ l1 = rt.Doublet(Ebaf11(),
                 thickness_crown=20.,
                 thickness_flint=3.,
                 aperture_radius=25.4,
-                input_collimated=False,
+                # input_collimated=False,
+                input_collimated=True,
                 names="AC508-075-A-ML")
 
 l2 = rt.Doublet(Ebaf11(),
@@ -25,7 +26,8 @@ l2 = rt.Doublet(Ebaf11(),
                 thickness_crown=20.,
                 thickness_flint=3.,
                 aperture_radius=25.4,
-                input_collimated=True,
+                # input_collimated=True,
+                input_collimated=False,
                 names="AC508-075-A-ML")
 
 # flat surface at focal plane of lens 1
@@ -38,15 +40,20 @@ system = rt.System([rt.FlatSurface([0, 0, 0], [0, 0, 1], 25.4)],
                    []
                    )
 system = system.concatenate(l1, Vacuum(), -f1_left)
+# system = l1
 
 # find collimated distance between l1 and l2
 d = l2.find_paraxial_collimated_distance(l2, wlen, Vacuum(), Vacuum(), Vacuum())
 
 # add flat surface at Fourier plane
-system = system.concatenate(rt.FlatSurface([0, 0, 0], [0, 0, 1], np.inf),
+system = system.concatenate(rt.FlatSurface([0, 0, 0],
+                                           [0, 0, 1],
+                                           12.7
+                                           #25.4
+                                           ),
                             Vacuum(),
                             wd_right)
-ind_pupil = len(system.surfaces)
+ind_pupil = len(system.surfaces) - 1
 
 # add lens #2
 system = system.concatenate(l2, Vacuum(), d - wd_right)
@@ -66,10 +73,10 @@ system.set_aperture_stop(ind_pupil)
 
 # ######################################
 #
-rays_in = rt.get_ray_fan([0, 0, 0], 3 * np.pi/180, 101, wlen)
-rays = system.ray_trace(rays_in, Vacuum(), Vacuum())
-system.plot(rays)
-
+# rays_in = rt.get_ray_fan([0, 0, 0], 3 * np.pi/180, 101, wlen)
+# rays = system.ray_trace(rays_in, Vacuum(), Vacuum())
+# system.plot(rays)
+system.plot()
 
 q_in = gb.get_q(10e-3, 0, wlen, 0, 1)
 qs = system.gaussian_paraxial(q_in,
@@ -78,6 +85,10 @@ qs = system.gaussian_paraxial(q_in,
                               Vacuum(),
                               print_results=True)
 
-system.seidel_third_order(wlen,
-                          Vacuum(),
-                          Vacuum())
+abs = system.seidel_third_order(wlen,
+                                Vacuum(),
+                                Vacuum(),
+                                print_results=True,
+                                print_paraxial_data=True,
+                                object_distance=np.inf,
+                                )

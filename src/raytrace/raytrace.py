@@ -587,32 +587,181 @@ class System:
                            wavelength: float,
                            initial_material: Material,
                            final_material: Material,
+                           print_results: bool = False,
+                           print_paraxial_data: bool = False,
+                           object_distance: float = 0.,
+                           object_height: float = 0.
                            ):
+        """
+        Calculate Seidel aberration coefficients
+        We assume the initial object is at the first surface (if this is not true, add a surface)
+
+        :param wavelength:
+        :param initial_material:
+        :param final_material:
+        :param print_results:
+        :param object_distance: distance of object before first surface. Positive if before surface
+        :param object_height: field-of-view, used to calculate chief ray
+        :return:
+        """
 
         if self.aperture_stop is None:
             raise ValueError("aperture_stop was None, but aperture_stop must be provided to "
                              "compute Seidel aberrations")
 
-        # compute marginal ray
-        rt_stop = np.diag([1, 1, 1, 1, 1])
-        for ii in range(self.aperture_stop):
+        if np.isinf(object_distance):
+            object_distance = np.finfo(float).max
+
+        # get all ray transfer matrices
+        rt_mats = []
+        for ii, s in enumerate(self.surfaces):
             if ii == 0:
                 n1 = initial_material.n(wavelength)
+                d = object_distance
             else:
-                n1 = self.materials[ii].n(wavelength)
-            n2 = self.materials[ii].n(wavelength)
-            rt_next = self.surfaces[ii].get_ray_transfer_matrix(n1, n2)
-            rt_stop = rt_next.dot(rt_stop)
+                n1 = self.materials[ii - 1].n(wavelength)
+                d = np.linalg.norm(self.surfaces[ii].paraxial_center - self.surfaces[ii - 1].paraxial_center)
 
+            if ii < len(self.surfaces) - 1:
+                n2 = self.materials[ii].n(wavelength)
+            else:
+                n2 = final_material.n(wavelength)
+
+            rt_free = get_free_space_abcd(d, n1)
+            rt_next = self.surfaces[ii].get_ray_transfer_matrix(n1, n2).dot(rt_free)
+
+            if ii == 0:
+                rt_mats.append(rt_next)
+            else:
+                rt_mats.append(rt_next.dot(rt_mats[ii - 1]))
+
+        # compute marginal ray at stop and in object space
+        rt_stop = rt_mats[self.aperture_stop]
+        n_start = initial_material.n(wavelength)
+        n_stop = self.materials[self.aperture_stop].n(wavelength)
         h_stop = self.surfaces[self.aperture_stop].aperture_rad
-        # B * u = h_stop
-        # D * u = u_stop
-        u = h_stop / rt_stop[0, 1]
-        u_stop = rt_stop[1, 1] * u
 
+        u_start = h_stop / rt_stop[0, 1] / n_start # B * n_start * u_start = h_stop
+        # handle infinite conjugates
+        # todo: still not totally doing this ...
+        if u_start == 0.:
+            h_start = h_stop / rt_stop[0, 0]
+        else:
+            h_start = 0.
+        u_stop = rt_stop[1, 1] * (n_start * u_start) / n_stop # D * n_start * u_start = u_stop
+
+        # compute chief ray
+        h_chief = object_height
+        u_chief = -rt_stop[0, 0] / rt_stop[0, 1] / n_start * h_chief # A*h + B*n*u = h_chief = 0
+        u_chief_stop = (h_chief * rt_stop[1, 0] + n_start * u_chief * rt_stop[1, 1]) / n_stop
+
+        # compute aberrations following "Fundamentals of Optical Design" by Michael J. Kidger, ch 6
+        aberrations = np.zeros((len(self.surfaces), 5)) * np.nan
+        # z_obj, h_obj, u_obj, z_img, h_img, u_img, h_surface, abbe invariant
+        paraxial_data = np.zeros((len(self.surfaces), 8))
+
+        z_img = -object_distance
+        u_img = u_start
+        h_img = h_start
         for ii, s in enumerate(self.surfaces):
-            pass
+            if ii == 0:
+                n_obj = initial_material.n(wavelength)
+                d = 0
+            else:
+                n_obj = self.materials[ii - 1].n(wavelength)
+                d = np.linalg.norm(self.surfaces[ii].paraxial_center - self.surfaces[ii - 1].paraxial_center)
 
+            if ii < len(self.surfaces) - 1:
+                n_img = self.materials[ii].n(wavelength)
+            else:
+                n_img = final_material.n(wavelength)
+
+            # new object info
+            z_obj = float(z_img - d)
+            u_obj = u_img
+            h_obj = h_img
+
+            # solve for new image position
+            if n_obj == n_img:
+                z_img = z_obj
+            else:
+                z_img = float(s.solve_img_eqn(z_obj, n_obj, n_img))
+
+            # height at surface
+            rt_surf = s.get_ray_transfer_matrix(n_obj, n_img).dot(
+                      get_free_space_abcd(-z_obj, n_obj))
+            h_surf = rt_surf[0, 0] * h_obj + rt_surf[0, 1] * (n_obj * u_obj)
+
+            # angle at surface
+            rt_img = get_free_space_abcd(z_img, n_img).dot(rt_surf)
+            h_img = rt_img[0, 0] * h_obj + rt_img[0, 1] * (n_obj * u_obj)
+            u_img = (rt_img[1, 0] * h_obj + rt_img[1, 1] * (n_obj * u_obj)) / n_img
+
+            # todo: grab from RT matrix?
+            if isinstance(s, SphericalSurface):
+                abbe_inv = n_obj * (h_surf / s.radius + u_obj)
+            elif isinstance(s, FlatSurface):
+                abbe_inv = n_obj * u_obj
+            else:
+                raise NotImplementedError()
+
+            paraxial_data[ii, 0] = z_obj
+            paraxial_data[ii, 1] = h_obj
+            paraxial_data[ii, 2] = u_obj
+            paraxial_data[ii, 3] = z_img
+            paraxial_data[ii, 4] = h_img
+            paraxial_data[ii, 5] = u_img
+            paraxial_data[ii, 6] = h_surf
+            paraxial_data[ii, 7] = abbe_inv
+            # the actual wavefront aberration is 1/8 times the following:
+            aberrations[ii, 0] = -abbe_inv**2 * h_surf * (u_img / n_img - u_obj / n_obj)
+
+
+        if print_results:
+            print("surfaces,"
+                  " spherical,"
+                  "       coma,"
+                  "     astig.,"
+                  "   field curv.,"
+                  "   distortion")
+            for ii in range(len(self.surfaces)):
+                print(f"{ii:02d}:      "
+                      f"{aberrations[ii, 0]:10.6g}, "
+                      f"{aberrations[ii, 1]:10.6g}, "
+                      f"{aberrations[ii, 2]:10.6g}, "
+                      f"{aberrations[ii, 3]:10.6g}, "
+                      f"{aberrations[ii, 4]:10.6g}")
+            print(f"sum:     "
+                  f"{np.sum(aberrations[:, 0], axis=0):10.6g}, "
+                  f"{np.sum(aberrations[:, 1], axis=0):10.6g}, "
+                  f"{np.sum(aberrations[:, 2], axis=0):10.6g}, "
+                  f"{np.sum(aberrations[:, 3], axis=0):10.6g}, "
+                  f"{np.sum(aberrations[:, 4], axis=0):10.6g}")
+
+        if print_paraxial_data:
+            print("surface,"
+                  "      z_obj,"
+                  "      h_obj,"
+                  "      u_obj,"
+                  "      z_img,"
+                  "      h_img,"
+                  "      u_img,"
+                  "  h_surface,"
+                  "    abbe inv"
+                  )
+            for ii in range(len(self.surfaces)):
+                print(f"{ii:02d}:      "
+                      f"{paraxial_data[ii, 0]:10.6g}, "
+                      f"{paraxial_data[ii, 1]:10.6g}, "
+                      f"{paraxial_data[ii, 2]:10.6g}, "
+                      f"{paraxial_data[ii, 3]:10.6g}, "
+                      f"{paraxial_data[ii, 4]:10.6g}, "
+                      f"{paraxial_data[ii, 5]:10.6g}, "
+                      f"{paraxial_data[ii, 6]:10.6g}, "
+                      f"{paraxial_data[ii, 7]:10.6g}"
+                      )
+
+        return aberrations
 
 
     def find_paraxial_collimated_distance(self,
@@ -681,8 +830,6 @@ class System:
         ns = np.zeros(len(self.surfaces) + 1)
         qs = np.zeros(len(self.surfaces) + 1, dtype=complex)
         qs[0] = q_in
-        # todo: loop over surfaces and print data
-        test = np.array([[1, 0], [0, 1]])
         for ii, s in enumerate(self.surfaces):
             if ii == 0:
                 n1 = initial_material.n(wavelength)
@@ -700,8 +847,6 @@ class System:
             qs[ii + 1] = (qs[ii] * abcd[0, 0] + abcd[0, 1]) / (qs[ii] * abcd[1, 0] + abcd[1, 1])
             ns[ii] = n1
             ns[ii + 1] = n2
-
-            test = abcd.dot(test)
 
         if print_results:
             import mcsim.analysis.gauss_beam as gb
@@ -1150,10 +1295,10 @@ class Surface:
         mat = self.get_ray_transfer_matrix(n1, n2)
         # idea: form full ABCD matrix as free prop in n2 * mat * free prop in n1, then set B = 0
         with np.errstate(divide="ignore"):
-            if not np.isinf(s):
-                sp = np.atleast_1d(-n2 * (-mat[0, 0] * s / n1 + mat[0, 1]) / np.array(-mat[1, 0] * s / n1 + mat[1, 1]))
-            else:
+            if np.abs(s) > 1e12:
                 sp = np.atleast_1d(-n2 * mat[0, 0] / mat[1, 0])
+            else:
+                sp = np.atleast_1d(-n2 * (-mat[0, 0] * s / n1 + mat[0, 1]) / np.array(-mat[1, 0] * s / n1 + mat[1, 1]))
 
         return sp
 
