@@ -488,8 +488,8 @@ class System:
                            final_material: Material,
                            print_results: bool = False,
                            object_distance: float = 0.,
-                           object_height: Optional[float] = None,
-                           object_angle: Optional[float] = None,
+                           object_height: float = 0.,
+                           object_angle: float = 0.,
                            ):
         """
         Calculate Seidel aberration coefficients
@@ -500,8 +500,9 @@ class System:
         :param final_material:
         :param print_results:
         :param object_distance: distance of object before first surface. Positive if before surface
-        :param object_height: field-of-view, used to calculate chief ray
-        :param object_angle: field of view angle. Only one of object height and object angle should be provided
+        :param object_height: field-of-view, used to calculate chief ray. Object height is used if object_distance
+          is not infinite
+        :param object_angle: field of view angle. object_angle is only used if object_distance = np.inf
         :return:
         """
 
@@ -509,44 +510,40 @@ class System:
             raise ValueError("aperture_stop was None, but aperture_stop must be provided to "
                              "compute Seidel aberrations")
 
-        if np.isinf(object_distance):
-            object_distance = np.finfo(float).max
+        materials = [initial_material] + self.materials + [final_material]
+        ns = np.array([m.n(wavelength) for m in materials])
 
-        # get ray transfer matrices after each surface
-        rt_start = get_free_space_abcd(object_distance, initial_material.n(wavelength))
-        rt_mats = self.get_ray_transfer_matrix(wavelength, initial_material, final_material).dot(rt_start)
-
-        # compute marginal ray at stop and in object space
+        # get ray transfer matrices for each surface
+        rt_mats = self.get_ray_transfer_matrix(wavelength, initial_material, final_material)
         rt_stop = rt_mats[self.aperture_stop]
-        n_start = initial_material.n(wavelength)
-        n_stop = self.materials[self.aperture_stop].n(wavelength)
-        h_stop = self.surfaces[self.aperture_stop].aperture_rad
 
-        h_start = 0.
-        u_start = h_stop / rt_stop[0, 1] / n_start  # B * n_start * u_start = h_stop
+        # compute marginal and chiefs rays at first surface
+        if np.isinf(object_distance):
+            h_chief_first = 0.
+            u_chief_first = object_angle
 
-        # compute chief ray
-        # todo: finish this
-        if object_height is not None:
-            h_chief = object_height
-            u_chief = -rt_stop[0, 0] / rt_stop[0, 1] / n_start * h_chief  # A*h + B*n*u = h_chief = 0
-            u_chief_stop = (h_chief * rt_stop[1, 0] + n_start * u_chief * rt_stop[1, 1]) / n_stop
-        elif object_angle is not None:
-            u_chief = object_angle
-            h_chief = 0 # todo
-            # A * h_chief + B * n * u = 0
+            h_first = self.surfaces[self.aperture_stop].aperture_rad / rt_stop[0, 0]
+            u_first = 0.
         else:
-            raise ValueError("Only object height or object angle should be provided")
+            rt_obj2stop = rt_stop.dot(get_free_space_abcd(object_distance, ns[0]))
+            # B * n_start * u_start = h_stop
+            h_start = 0.
+            u_start = self.surfaces[self.aperture_stop].aperture_rad / rt_obj2stop[0, 1] / ns[0]
+            h_first = rt_obj2stop[0, 0] * h_start + rt_obj2stop[0, 1] * ns[0] * u_start
+            u_first = rt_obj2stop[1, 0] * h_start + rt_obj2stop[1, 1] * ns[0] * u_start
+
+            h_chief_start = object_height
+            u_chief_start = -rt_obj2stop[0, 0] / rt_obj2stop[0, 1] / ns[0] * h_chief_start  # A*h + B*n*u = h_chief = 0
+            h_chief_first = rt_obj2stop[0, 0] * h_chief_start + rt_obj2stop[0, 1] * ns[0] * u_chief_start
+            u_chief_first = rt_obj2stop[1, 0] * h_chief_start + rt_obj2stop[1, 1] * ns[0] * u_chief_start
 
         # trace marginal and chief rays
         # nsurfaces x 2 x 2 array
         # rays[:, :, 0] are marginal ray data (h, n*u); rays[:, :, 1] are chief ray data
-        rays_start = np.array([[h_start, h_chief],
-                               [n_start * u_start, n_start * u_chief]])
+        rays_start = np.array([[h_first, h_chief_first],
+                               [ns[0] * u_first, ns[0] * u_chief_first]])
         rays = rt_mats.dot(rays_start)
 
-        materials = [initial_material] + self.materials + [final_material]
-        ns = np.array([m.n(wavelength) for m in materials])
         # values needed to calculate aberrations
         cs = np.array([1 / s.radius if isinstance(s, SphericalSurface) else 0 for s in self.surfaces])
         refraction_inv = ns[:-1] * rays[:-1, 0, 0] * cs + rays[:-1, 1, 0]
@@ -559,7 +556,7 @@ class System:
         # spherical, coma, astigmatism, field curvature, distortion
         aberrations = np.zeros((len(self.surfaces), 5)) * np.nan
         aberrations[:, 0] = -refraction_inv**2 * rays[:-1, 0, 0] * delta_un
-        aberrations[:, 1] = -refraction_inv * refraction_inv_chief * delta_un
+        aberrations[:, 1] = -refraction_inv * refraction_inv_chief * rays[:-1, 0, 0] * delta_un
         aberrations[:, 2] = -refraction_inv_chief ** 2 * rays[:-1, 0, 0] * delta_un
         aberrations[:, 3] = -lagrange_inv ** 2 * cs * (1 / ns[1:] - 1 / ns[:-1])
         aberrations[:, 4] = refraction_inv_chief / refraction_inv * (aberrations[:, 2] + aberrations[:, 3])
@@ -1125,8 +1122,6 @@ class Surface:
         :param n2:
         :return sp_x:
         """
-        # todo: helper function for calculating seidel aberrations (not finished)
-
         mat = self.get_ray_transfer_matrix(n1, n2)
         # idea: form full ABCD matrix as free prop in n2 * mat * free prop in n1, then set B = 0
         with np.errstate(divide="ignore"):
@@ -1563,9 +1558,6 @@ class PerfectLens(RefractingSurface):
         self.normal = np.array(normal).squeeze()
         aperture_rad = focal_len * np.sin(self.alpha)  # only correct up to factor of n1
         super(PerfectLens, self).__init__(normal, normal, center, center, aperture_rad)
-
-    def get_normal(self):
-        pass
 
     def get_intersect(self, rays: array, material: Material) -> array:
         rays_int, ts = propagate_ray2plane(rays, self.normal, self.center, material)

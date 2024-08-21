@@ -32,31 +32,6 @@ l2 = rt.Doublet(Ebaf11(),
                 input_collimated=True,
                 names="AC508-075-A-ML")
 
-
-# l1 = rt.Doublet(Nlak22(),
-#                 Nsf6ht(),
-#                 radius_crown=65.8,
-#                 radius_flint=-280.6,
-#                 radius_interface=-56,
-#                 thickness_crown=13.0,
-#                 thickness_flint=2.0,
-#                 aperture_radius=25.4,
-#                 input_collimated=False,
-#                 names="AC508-100-B"
-#                 )
-#
-# l2 = rt.Doublet(Nlak22(),
-#                 Nsf6ht(),
-#                 radius_crown=65.8,
-#                 radius_flint=-280.6,
-#                 radius_interface=-56,
-#                 thickness_crown=13.0,
-#                 thickness_flint=2.0,
-#                 aperture_radius=25.4,
-#                 input_collimated=True,
-#                 names="AC508-100-B"
-#                 )
-
 # flat surface at focal plane of lens 1
 cp1 = l1.get_cardinal_points(wlen, Vacuum(), Vacuum())
 f1_left = cp1[0][-1]
@@ -111,7 +86,7 @@ abs = system.seidel_third_order(wlen,
                                 Vacuum(),
                                 Vacuum(),
                                 print_results=True,
-                                print_paraxial_data=True,
+                                object_height=5
                                 )
 
 
