@@ -552,14 +552,20 @@ class System:
         lagrange_inv = ns[:-1] * (rays[:-1, 0, 1] * rays[:-1, 1, 0] / ns[:-1] -
                                   rays[:-1, 0, 0] * rays[:-1, 1, 1] / ns[:-1])
 
-        # compute aberrations following "Fundamentals of Optical Design" by Michael J. Kidger, ch 6 eqs 6.27-6.31
+        # compute aberrations following "Fundamentals of Optical Design" by Michael J. Kidger,
+        # chapter 6, eqs 6.27-6.30 and 6.37
         # spherical, coma, astigmatism, field curvature, distortion
         aberrations = np.zeros((len(self.surfaces), 5)) * np.nan
         aberrations[:, 0] = -refraction_inv**2 * rays[:-1, 0, 0] * delta_un
         aberrations[:, 1] = -refraction_inv * refraction_inv_chief * rays[:-1, 0, 0] * delta_un
         aberrations[:, 2] = -refraction_inv_chief ** 2 * rays[:-1, 0, 0] * delta_un
         aberrations[:, 3] = -lagrange_inv ** 2 * cs * (1 / ns[1:] - 1 / ns[:-1])
-        aberrations[:, 4] = refraction_inv_chief / refraction_inv * (aberrations[:, 2] + aberrations[:, 3])
+        # aberrations[:, 4] = refraction_inv_chief / refraction_inv * (aberrations[:, 2] + aberrations[:, 3])
+        aberrations[:, 4] = (-refraction_inv_chief ** 3 * rays[:-1, 0, 0] * (1 / ns[1:]**2 - 1 / ns[:-1]**2) +
+                             rays[:-1, 0, 1] * refraction_inv_chief * cs *
+                             (2 * rays[:-1, 0, 0] * refraction_inv_chief - rays[:-1, 0, 1] * refraction_inv) *
+                             (1 / ns[1:] - 1 / ns[:-1])
+                             )
 
         if print_results:
             print("surface,"
