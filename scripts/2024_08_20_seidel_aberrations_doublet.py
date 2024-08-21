@@ -16,7 +16,6 @@ l1 = rt.Doublet(Nsk11(),
                 thickness_crown=3.5,
                 thickness_flint=1.5,
                 aperture_radius=10.,
-                # input_collimated=False,
                 input_collimated=True,
                 names="Kidger section 8.2.2")
 system = l1.concatenate(rt.FlatSurface([0, 0, 0], [0, 0, 1], 25.4),
@@ -29,6 +28,6 @@ abs = system.seidel_third_order(wlen,
                                 Vacuum(),
                                 Vacuum(),
                                 print_results=True,
-                                print_paraxial_data=True,
                                 object_distance=np.inf,
+                                object_angle=1 * np.pi/180
                                 )

@@ -1,24 +1,15 @@
 """
 ray represented by eight parameters
-(xo, yo, zo, dx, dy, dz, phase, wavelength)
-where (xo, yo, zo) is a point the ray passes through, and (dx, dy, dz) is a
-unit vector specifying its direction
+(xo, yo, zo, dx, dy, dz, phase, wavelength) where (xo, yo, zo) is a point the ray passes through,
+and (dx, dy, dz) is a unit vector specifying its direction. The ray travels along the line
+C(t) = (xo, yo, zo) + t * (dx, dy, dz)
 
-The ray travels along the curve C(t) = (xo, yo, zo) + t * (dx, dy, dz)
+A paraxial ray has a different representation, in terms of height and angle,
+(hx, n*ux, hy, n*uy). Heights and angles are defined relative to some point and axis,
+(xo, yo, zo) and (dx, dy, dz).
 
-A paraxial ray has a different representation
-(hx, n*ux, hy, n*uy) defined relative to some point and axis.
-where (xo, yo, zo) and (dx, dy, dz) define the paraxial axis.
-
-col([hx, n*ux, hy, n*uy, 1]) = [[A, B, 0, 0, K],
-                                [C, D, 0, 0, L],
-                                [0, 0, E, F, M],
-                                [0, 0, G, H, N],
-                                [0, 0, 0, 0, 1]] * col([hx1, n1*ux1, hy2, n2*uy2, 1]
-here K, L account for any shift between the definition fo hx, n*ux and the natural center points.
-
-z points to the right, along the optical axis. x points upwards, and y points out of the plane,
-ensuring the coordinate System is right-handed
+We adopt a default coordinate system where z points to the right, along the optical axis. x points upwards,
+and y points out of the plane, ensuring the coordinate System is right-handed
 """
 from typing import Optional, Union
 from collections.abc import Sequence
@@ -39,7 +30,7 @@ except ImportError:
     array = NDArray
 
 
-def get_free_space_abcd(d: float, n: float = 1.):
+def get_free_space_abcd(d: float, n: float = 1.) -> NDArray:
     """
     Compute the ray-transfer (ABCD) matrix for free space beam propagation
 
@@ -47,11 +38,7 @@ def get_free_space_abcd(d: float, n: float = 1.):
     :param n: index of refraction
     :return mat:
     """
-    mat = np.array([[1, d/n, 0, 0,   0],
-                    [0, 1,   0, 0,   0],
-                    [0, 0,   1, d/n, 0],
-                    [0, 0,   0, 1,   0],
-                    [0, 0,   0, 0,   1]])
+    mat = np.array([[1, d/n], [0, 1]])
     return mat
 
 
@@ -374,6 +361,7 @@ class System:
     """
     Collection of optical surfaces
     """
+    # todo: think life will be easier if keep materials at start and end too
 
     def __init__(self,
                  surfaces: list,
@@ -411,8 +399,6 @@ class System:
                 raise ValueError("len(surfaces_by_name) must equal len(surfaces)")
 
             self.surfaces_by_name = np.array(surfaces_by_name).astype(int)
-
-        # todo: also need a way to carry names/descriptions of lenses around and show on plot
 
     def reverse(self):
         """
@@ -501,9 +487,9 @@ class System:
                            initial_material: Material,
                            final_material: Material,
                            print_results: bool = False,
-                           print_paraxial_data: bool = False,
                            object_distance: float = 0.,
-                           object_height: float = 0.
+                           object_height: Optional[float] = None,
+                           object_angle: Optional[float] = None,
                            ):
         """
         Calculate Seidel aberration coefficients
@@ -515,6 +501,7 @@ class System:
         :param print_results:
         :param object_distance: distance of object before first surface. Positive if before surface
         :param object_height: field-of-view, used to calculate chief ray
+        :param object_angle: field of view angle. Only one of object height and object angle should be provided
         :return:
         """
 
@@ -525,28 +512,9 @@ class System:
         if np.isinf(object_distance):
             object_distance = np.finfo(float).max
 
-        # get all ray transfer matrices
-        rt_mats = []
-        for ii, s in enumerate(self.surfaces):
-            if ii == 0:
-                n1 = initial_material.n(wavelength)
-                d = object_distance
-            else:
-                n1 = self.materials[ii - 1].n(wavelength)
-                d = np.linalg.norm(self.surfaces[ii].paraxial_center - self.surfaces[ii - 1].paraxial_center)
-
-            if ii < len(self.surfaces) - 1:
-                n2 = self.materials[ii].n(wavelength)
-            else:
-                n2 = final_material.n(wavelength)
-
-            rt_free = get_free_space_abcd(d, n1)
-            rt_next = self.surfaces[ii].get_ray_transfer_matrix(n1, n2).dot(rt_free)
-
-            if ii == 0:
-                rt_mats.append(rt_next)
-            else:
-                rt_mats.append(rt_next.dot(rt_mats[ii - 1]))
+        # get ray transfer matrices after each surface
+        rt_start = get_free_space_abcd(object_distance, initial_material.n(wavelength))
+        rt_mats = self.get_ray_transfer_matrix(wavelength, initial_material, final_material).dot(rt_start)
 
         # compute marginal ray at stop and in object space
         rt_stop = rt_mats[self.aperture_stop]
@@ -554,82 +522,72 @@ class System:
         n_stop = self.materials[self.aperture_stop].n(wavelength)
         h_stop = self.surfaces[self.aperture_stop].aperture_rad
 
+        h_start = 0.
         u_start = h_stop / rt_stop[0, 1] / n_start  # B * n_start * u_start = h_stop
-        # handle infinite conjugates
-        if np.abs(u_start) < 1e-12 == 0.:
-            h_start = h_stop / rt_stop[0, 0]
-        else:
-            h_start = 0.
-        u_stop = rt_stop[1, 1] * (n_start * u_start) / n_stop  # D * n_start * u_start = u_stop
 
         # compute chief ray
-        h_chief = object_height
-        u_chief = -rt_stop[0, 0] / rt_stop[0, 1] / n_start * h_chief  # A*h + B*n*u = h_chief = 0
-        u_chief_stop = (h_chief * rt_stop[1, 0] + n_start * u_chief * rt_stop[1, 1]) / n_stop
+        # todo: finish this
+        if object_height is not None:
+            h_chief = object_height
+            u_chief = -rt_stop[0, 0] / rt_stop[0, 1] / n_start * h_chief  # A*h + B*n*u = h_chief = 0
+            u_chief_stop = (h_chief * rt_stop[1, 0] + n_start * u_chief * rt_stop[1, 1]) / n_stop
+        elif object_angle is not None:
+            u_chief = object_angle
+            h_chief = 0 # todo
+            # A * h_chief + B * n * u = 0
+        else:
+            raise ValueError("Only object height or object angle should be provided")
 
-        # compute aberrations following "Fundamentals of Optical Design" by Michael J. Kidger, ch 6
+        # trace marginal and chief rays
+        # nsurfaces x 2 x 2 array
+        # rays[:, :, 0] are marginal ray data (h, n*u); rays[:, :, 1] are chief ray data
+        rays_start = np.array([[h_start, h_chief],
+                               [n_start * u_start, n_start * u_chief]])
+        rays = rt_mats.dot(rays_start)
+
+        materials = [initial_material] + self.materials + [final_material]
+        ns = np.array([m.n(wavelength) for m in materials])
+        # values needed to calculate aberrations
+        cs = np.array([1 / s.radius if isinstance(s, SphericalSurface) else 0 for s in self.surfaces])
+        refraction_inv = ns[:-1] * rays[:-1, 0, 0] * cs + rays[:-1, 1, 0]
+        refraction_inv_chief = ns[:-1] * rays[:-1, 0, 1] * cs + rays[:-1, 1, 1]
+        delta_un = rays[1:, 1, 0] / ns[1:] / ns[1:] - rays[:-1, 1, 0] / ns[:-1] / ns[:-1]
+        lagrange_inv = ns[:-1] * (rays[:-1, 0, 1] * rays[:-1, 1, 0] / ns[:-1] -
+                                  rays[:-1, 0, 0] * rays[:-1, 1, 1] / ns[:-1])
+
+        # compute aberrations following "Fundamentals of Optical Design" by Michael J. Kidger, ch 6 eqs 6.27-6.31
+        # spherical, coma, astigmatism, field curvature, distortion
         aberrations = np.zeros((len(self.surfaces), 5)) * np.nan
-        # z_obj, h_obj, u_obj, z_img, h_img, u_img, h_surface, abbe invariant
-        paraxial_data = np.zeros((len(self.surfaces), 8))
-
-        # todo: don't actually need the imaging position data ... just need h,u,n and h',u',n'
-        z_img = -object_distance
-        u_img = u_start
-        h_img = h_start
-        for ii, s in enumerate(self.surfaces):
-            if ii == 0:
-                n_obj = initial_material.n(wavelength)
-                d = 0
-            else:
-                n_obj = self.materials[ii - 1].n(wavelength)
-                d = np.linalg.norm(self.surfaces[ii].paraxial_center - self.surfaces[ii - 1].paraxial_center)
-
-            if ii < len(self.surfaces) - 1:
-                n_img = self.materials[ii].n(wavelength)
-            else:
-                n_img = final_material.n(wavelength)
-
-            # new object info
-            z_obj = float(z_img - d)
-            u_obj = u_img
-            h_obj = h_img
-
-            # solve for new image position
-            if n_obj == n_img:
-                z_img = z_obj
-            else:
-                z_img = float(s.solve_img_eqn(z_obj, n_obj, n_img))
-
-            # height at surface
-            rt_surf = s.get_ray_transfer_matrix(n_obj, n_img).dot(
-                      get_free_space_abcd(-z_obj, n_obj))
-            h_surf = rt_surf[0, 0] * h_obj + rt_surf[0, 1] * (n_obj * u_obj)
-
-            # angle at surface
-            rt_img = get_free_space_abcd(z_img, n_img).dot(rt_surf)
-            h_img = rt_img[0, 0] * h_obj + rt_img[0, 1] * (n_obj * u_obj)
-            u_img = (rt_img[1, 0] * h_obj + rt_img[1, 1] * (n_obj * u_obj)) / n_img
-
-            # todo: grab from RT matrix?
-            if isinstance(s, SphericalSurface):
-                abbe_inv = n_obj * (h_surf / s.radius + u_obj)
-            elif isinstance(s, FlatSurface):
-                abbe_inv = n_obj * u_obj
-            else:
-                raise NotImplementedError()
-
-            paraxial_data[ii, 0] = z_obj
-            paraxial_data[ii, 1] = h_obj
-            paraxial_data[ii, 2] = u_obj
-            paraxial_data[ii, 3] = z_img
-            paraxial_data[ii, 4] = h_img
-            paraxial_data[ii, 5] = u_img
-            paraxial_data[ii, 6] = h_surf
-            paraxial_data[ii, 7] = abbe_inv
-            # the actual wavefront aberration is 1/8 times the following:
-            aberrations[ii, 0] = -abbe_inv**2 * h_surf * (u_img / n_img - u_obj / n_obj)
+        aberrations[:, 0] = -refraction_inv**2 * rays[:-1, 0, 0] * delta_un
+        aberrations[:, 1] = -refraction_inv * refraction_inv_chief * delta_un
+        aberrations[:, 2] = -refraction_inv_chief ** 2 * rays[:-1, 0, 0] * delta_un
+        aberrations[:, 3] = -lagrange_inv ** 2 * cs * (1 / ns[1:] - 1 / ns[:-1])
+        aberrations[:, 4] = refraction_inv_chief / refraction_inv * (aberrations[:, 2] + aberrations[:, 3])
 
         if print_results:
+            print("surface,"
+                  "          h,"
+                  "          u,"
+                  "       hbar,"
+                  "       ubar,"
+                  "   delta(u/n)"
+                  "          A,"
+                  "       Abar,"
+                  "   Lag. inv."
+                  )
+            for ii in range(len(self.surfaces)):
+                print(f"{ii:02d}:      "
+                      f"{rays[ii, 0, 0]:10.6g}, "
+                      f"{rays[ii, 1, 0] / ns[ii]:10.6g}, "
+                      f"{rays[ii, 0, 1]:10.6g}, "
+                      f"{rays[ii, 1, 1] / ns[ii]:10.6g}, "
+                      f"{delta_un[ii]:10.6g}, "
+                      f"{refraction_inv[ii]:10.6g}, "
+                      f"{refraction_inv_chief[ii]:10.6g}, "
+                      f"{lagrange_inv[ii]:10.6g}"
+                      )
+
+
             print("surfaces,"
                   " spherical,"
                   "       coma,"
@@ -649,29 +607,6 @@ class System:
                   f"{np.sum(aberrations[:, 2], axis=0):10.6g}, "
                   f"{np.sum(aberrations[:, 3], axis=0):10.6g}, "
                   f"{np.sum(aberrations[:, 4], axis=0):10.6g}")
-
-        if print_paraxial_data:
-            print("surface,"
-                  "      z_obj,"
-                  "      h_obj,"
-                  "      u_obj,"
-                  "      z_img,"
-                  "      h_img,"
-                  "      u_img,"
-                  "  h_surface,"
-                  "    abbe inv"
-                  )
-            for ii in range(len(self.surfaces)):
-                print(f"{ii:02d}:      "
-                      f"{paraxial_data[ii, 0]:10.6g}, "
-                      f"{paraxial_data[ii, 1]:10.6g}, "
-                      f"{paraxial_data[ii, 2]:10.6g}, "
-                      f"{paraxial_data[ii, 3]:10.6g}, "
-                      f"{paraxial_data[ii, 4]:10.6g}, "
-                      f"{paraxial_data[ii, 5]:10.6g}, "
-                      f"{paraxial_data[ii, 6]:10.6g}, "
-                      f"{paraxial_data[ii, 7]:10.6g}"
-                      )
 
         return aberrations
 
@@ -694,8 +629,8 @@ class System:
         :param axis:
         :return dx, dy:
         """
-        mat1 = self.get_ray_transfer_matrix(wavelength, initial_material, intermediate_material)
-        mat2 = other.get_ray_transfer_matrix(wavelength, intermediate_material, final_material)
+        mat1 = self.get_ray_transfer_matrix(wavelength, initial_material, intermediate_material)[-1]
+        mat2 = other.get_ray_transfer_matrix(wavelength, intermediate_material, final_material)[-1]
 
         # todo: implement axis
         d = -(mat1[0, 0] / mat1[1, 0] + mat2[1, 1] / mat2[1, 0]) * intermediate_material.n(wavelength)
@@ -755,7 +690,7 @@ class System:
                 n2 = final_material.n(wavelength)
                 d = 0.
 
-            abcd = get_free_space_abcd(d, n2).dot(s.get_ray_transfer_matrix(n1, n2))[:2, :2]
+            abcd = get_free_space_abcd(d, n2).dot(s.get_ray_transfer_matrix(n1, n2))
             qs[ii + 1] = (qs[ii] * abcd[0, 0] + abcd[0, 1]) / (qs[ii] * abcd[1, 0] + abcd[1, 1])
             ns[ii] = n1
             ns[ii + 1] = n2
@@ -785,8 +720,10 @@ class System:
                                 final_material: Material,
                                 axis=None):
         """
-        Generate the ray transfer (ABCD) matrix for an optical System
-        Assume that the optical System starts at the provided initial distance before the first Surface
+        Generate the ray transfer (ABCD) matrices throughout an optical system.
+        If the optical system as n surfaces, then this returns an array of size n+1 x 2 x 2,
+        where the first n matrices transfer a ray to just before each surface, and the last matrix
+        transfers a ray to just after the last surface
 
         :param wavelength:
         :param initial_material:
@@ -795,25 +732,22 @@ class System:
          non-symmetric optics
         :return abcd_matrix:
         """
-        surfaces = self.surfaces
         materials = [initial_material] + self.materials + [final_material]
+        ns = np.array([m.n(wavelength) for m in materials])
+        rt_mats = np.zeros((len(self.surfaces) + 1, 2, 2))
+        for ii in range(len(self.surfaces) + 1):
+            if ii == 0:
+                rt_mats[ii] = get_free_space_abcd(0, ns[0])
+            elif ii == len(self.surfaces):
+                rt_next = self.surfaces[-1].get_ray_transfer_matrix(ns[-2], ns[-1])
+                rt_mats[ii] = rt_next.dot(rt_mats[ii - 1])
+            else:
+                d = np.linalg.norm(self.surfaces[ii].paraxial_center - self.surfaces[ii - 1].paraxial_center)
+                rt_surf = self.surfaces[ii - 1].get_ray_transfer_matrix(ns[ii - 1], ns[ii])
+                rt_next = get_free_space_abcd(d, ns[ii]).dot(rt_surf)
+                rt_mats[ii] = rt_next.dot(rt_mats[ii - 1])
 
-        indices_of_refraction = [m.n(wavelength) for m in materials]
-
-        # propagate initial distance
-        ray_xfer_mat = get_free_space_abcd(0, n=indices_of_refraction[0])
-        for ii in range(len(surfaces)):
-            # apply ray transfer matrix for current Surface
-            abcd_temp = surfaces[ii].get_ray_transfer_matrix(indices_of_refraction[ii], indices_of_refraction[ii + 1])
-            ray_xfer_mat = abcd_temp.dot(ray_xfer_mat)
-
-            # apply ray transfer matrix propagating between surfaces
-            if ii < (len(surfaces) - 1):
-                dist = np.linalg.norm(surfaces[ii].paraxial_center - surfaces[ii + 1].paraxial_center)
-                abcd_prop = get_free_space_abcd(dist, n=indices_of_refraction[ii + 1])
-                ray_xfer_mat = abcd_prop.dot(ray_xfer_mat)
-
-        return ray_xfer_mat
+        return rt_mats
 
     def get_cardinal_points(self,
                             wavelength: float,
@@ -821,6 +755,8 @@ class System:
                             final_material: Material,
                             axis=None):
         """
+        Get cardinal points of the system. These are the focal points, principal points, and nodal points.
+        This function also returns the effective focal length
 
         :param wavelength:
         :param initial_material:
@@ -828,8 +764,8 @@ class System:
         :param axis: for non-radially symmetric objects, which axis
         :return fp1, fp2, pp1, pp2, np1, np2, efl1, efl2:
         """
-        abcd_mat = self.get_ray_transfer_matrix(wavelength, initial_material, final_material)
-        abcd_inv = self.reverse().get_ray_transfer_matrix(wavelength, final_material, initial_material)
+        abcd_mat = self.get_ray_transfer_matrix(wavelength, initial_material, final_material)[-1]
+        abcd_inv = self.reverse().get_ray_transfer_matrix(wavelength, final_material, initial_material)[-1]
         n_obj = initial_material.n(wavelength)
         n_img = final_material.n(wavelength)
 
@@ -905,16 +841,11 @@ class System:
         elif mode == "paraxial-collimated":
             abcd = self.get_ray_transfer_matrix(wavelength,
                                                 initial_material,
-                                                final_material)
+                                                final_material)[-1]
             # determine what free space propagation matrix we need such that initial ray (h, n*theta) -> (0, n'*theta')
             dx = -abcd[0, 0] / abcd[1, 0] * self.materials[-1].n(wavelength)
-            dy = -abcd[2, 2] / abcd[3, 2] * self.materials[-1].n(wavelength)
 
-            if np.abs(dx - dy) >= 1e-12:
-                warnings.warn("dx and dy focus differs")
-
-            focus = (self.surfaces[-1].paraxial_center[2] +
-                     0.5 * (dx + dy) * np.sign(self.surfaces[-1].input_axis[2]))
+            focus = (self.surfaces[-1].paraxial_center[2] + dx * np.sign(self.surfaces[-1].input_axis[2]))
         else:
             raise ValueError(f"mode must be 'ray-fan', or 'collimated' 'paraxial-focused',"
                              f" or paraxial-collimated' but was '{mode:s}'")
@@ -1408,11 +1339,8 @@ class FlatSurface(RefractingSurface):
         return on_surface
 
     def get_ray_transfer_matrix(self, n1=None, n2=None):
-        mat = np.array([[1, 0, 0, 0, 0],
-                        [0, 1, 0, 0, 0],
-                        [0, 0, 1, 0, 0],
-                        [0, 0, 0, 1, 0],
-                        [0, 0, 0, 0, 1]])
+        mat = np.array([[1, 0],
+                        [0, 1]])
         return mat
 
     def draw(self, ax: Axes):
@@ -1477,10 +1405,7 @@ class PlaneMirror(ReflectingSurface):
         return on_surface
 
     def get_ray_transfer_matrix(self, n1: float, n2: float):
-        mat = np.array([[1, 0, 0, 0],
-                        [0, -1, 0, 0],
-                        [0, 0, 1, 0],
-                        [0, 0, 0, -1]])
+        mat = np.array([[1, 0], [0, -1]])
         return mat
 
     def draw(self, ax: Axes):
@@ -1605,11 +1530,7 @@ class SphericalSurface(RefractingSurface):
         with np.errstate(divide="ignore"):
             f = sgn * np.abs(self.radius) / np.array(n2 - n1)
 
-        mat = np.array([[1,    0, 0,    0, 0],
-                        [-1/f, 1, 0,    0, 0],
-                        [0,    0, 1,    0, 0],
-                        [0,    0, -1/f, 1, 0],
-                        [0,    0, 0,    0, 1]])
+        mat = np.array([[1,    0], [-1/f, 1]])
         return mat
 
     def draw(self, ax: Axes):
@@ -1863,11 +1784,7 @@ class PerfectLens(RefractingSurface):
         return rays_out
 
     def get_ray_transfer_matrix(self, n1: float, n2: float) -> NDArray:
-        mat = np.array([[1,                 0, 0,                 0, 0],
-                        [-1/self.focal_len, 1, 0,                 0, 0],
-                        [0,                 0, 1,                 0, 0],
-                        [0,                 0, -1/self.focal_len, 1, 0],
-                        [0,                 0, 0,                 0, 1]])
+        mat = np.array([[1, 0], [-1/self.focal_len, 1]])
         return mat
 
     def draw(self, ax: Axes):
