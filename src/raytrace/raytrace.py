@@ -1186,7 +1186,8 @@ class RefractingSurface(Surface):
         # check ray was coming from the "front side"
         # i.e. the ray has to be coming from the correct 2*pi area of space
         ray_normals = rays[:, 3:6]
-        cos_ray_input = xp.sum(ray_normals * xp.expand_dims(input_axis, axis=0), axis=1)
+        # cos_ray_input = xp.sum(ray_normals * xp.expand_dims(input_axis, axis=0), axis=1)
+        cos_ray_input = xp.sum(ray_normals * input_axis, axis=1)
         with np.errstate(invalid="ignore"):
             not_incoming = cos_ray_input < 0
         rays_intersection[not_incoming] = xp.nan
@@ -1194,7 +1195,6 @@ class RefractingSurface(Surface):
         # ######################
         # do refraction
         # ######################
-        # rays_refracted = refract(rays_intersection, normals, material1, material2)
         ds = rays_intersection[:, 3:6]
         wls = xp.expand_dims(rays_intersection[:, 7], axis=1)
 
@@ -1220,6 +1220,11 @@ class RefractingSurface(Surface):
                                              ds_out,
                                              rays_intersection[:, 6:]), axis=1)
             rays_refracted[xp.isnan(ds_out[:, 0]), :3] = xp.nan
+
+        # check array was within aperture
+        # if they reached a non-physical part of surface, still want to draw rays, so only exclude refracted
+        rays_outside_aperture = xp.logical_not(self.is_pt_on_surface(rays_intersection))
+        rays_refracted[rays_outside_aperture] = xp.nan
 
         # append refracted rays to full array
         ray_array = xp.concatenate((ray_array,
@@ -1284,6 +1289,11 @@ class ReflectingSurface(Surface):
                                   axis=1)
         rays_refracted[xp.isnan(ds_out[:, 0]), :3] = xp.nan
 
+        # check array was within aperture
+        # if they reached a non-physical part of surface, still want to draw rays, so only exclude refracted
+        rays_outside_aperture = xp.logical_not(self.is_pt_on_surface(rays_intersection))
+        rays_refracted[rays_outside_aperture] = xp.nan
+
         # append these rays to full array
         ray_array = xp.concatenate((ray_array,
                                     xp.stack((rays_intersection,
@@ -1327,15 +1337,10 @@ class FlatSurface(RefractingSurface):
     def is_pt_on_surface(self, pts: array):
 
         xp = cp if cp is not None and isinstance(pts, cp.ndarray) else np
-
         pts = xp.atleast_2d(pts)
-        x = pts[:, 0]
-        y = pts[:, 1]
-        z = pts[:, 2]
-        xc, yc, zc = self.center
-        nx, ny, nz = self.normal
-
-        on_surface = xp.abs((x - xc) * nx + (y - yc) * ny + (z - zc) * nz) < 1e-12
+        on_plane = xp.abs(xp.sum((pts[..., 0:3] - self.center) * self.normal, axis=-1)) < 1e-12
+        in_aperture = xp.linalg.norm(pts[..., 0:3] - self.center, axis=-1) <= self.aperture_rad
+        on_surface = xp.logical_and(on_plane, in_aperture)
 
         return on_surface
 
@@ -1395,13 +1400,9 @@ class PlaneMirror(ReflectingSurface):
     def is_pt_on_surface(self, pts: array):
         xp = cp if cp is not None and isinstance(pts, cp.ndarray) else np
         pts = xp.atleast_2d(pts)
-        x = pts[:, 0]
-        y = pts[:, 1]
-        z = pts[:, 2]
-        xc, yc, zc = xp.asarray(self.center)
-        nx, ny, nz = xp.asarray(self.normal)
-
-        on_surface = xp.abs((x - xc) * nx + (y - yc) * ny + (z - zc) * nz) < 1e-12
+        on_plane = xp.abs(xp.sum((pts[..., 0:3] - self.center) * self.normal, axis=-1)) < 1e-12
+        in_aperture = xp.linalg.norm(pts[..., 0:3] - self.center, axis=-1) <= self.aperture_rad
+        on_surface = xp.logical_and(on_plane, in_aperture)
 
         return on_surface
 
@@ -1460,7 +1461,7 @@ class SphericalSurface(RefractingSurface):
 
     def get_normal(self, pts: array) -> array:
         """
-        Return the outward facing normal if self.aperture_radius > 0, otherwise the inward facing normal
+        Return the outward facing normal if self.radius > 0, otherwise the inward facing normal
 
         :param pts: each pt defined by row of matrix
         :return normals:
@@ -1518,9 +1519,15 @@ class SphericalSurface(RefractingSurface):
         """
         xp = cp if cp is not None and isinstance(pts, cp.ndarray) else np
         pts = xp.atleast_2d(pts)
-        diff = (pts[:, 0] - self.center[0]) ** 2 + (pts[:, 1] - self.center[1]) ** 2 + (pts[:, 2] - self.center[2]) ** 2
-        on_surface = xp.abs(diff - self.radius**2) < 1e-12
-        return on_surface
+        dist = xp.linalg.norm(pts[..., 0:3] - self.center, axis=-1)
+        on_surface = xp.abs(dist - abs(self.radius)) < 1e-12
+
+        position_ortho_axis = (pts[..., :3] -
+                               xp.expand_dims(xp.sum(pts[..., :3] * self.input_axis, axis=-1), axis=-1) *
+                               self.input_axis)
+        in_aperture = xp.linalg.norm(position_ortho_axis, axis=-1) <= self.aperture_rad
+
+        return xp.logical_and(on_surface, in_aperture)
 
     def get_ray_transfer_matrix(self, n1: float, n2: float) -> NDArray:
         # test if we are going from "inside the sphere" to "outside the sphere" i.e. ray is striking the concave side
