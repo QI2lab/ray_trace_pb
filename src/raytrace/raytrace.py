@@ -14,12 +14,11 @@ and y points out of the plane, ensuring the coordinate System is right-handed
 from typing import Optional, Union
 from collections.abc import Sequence
 from numpy.typing import NDArray
-import copy
+from copy import deepcopy
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.axes._axes import Axes
 import matplotlib.pyplot as plt
-import warnings
 from raytrace.materials import Material, Vacuum
 
 try:
@@ -69,17 +68,17 @@ def get_ray_fan(pt: NDArray,
     if np.linalg.norm(center_ray) != 1:
         raise ValueError("center_ray must be a unit vector")
 
-    thetas = np.linspace(-theta_max, theta_max, n_thetas)
-    phis = np.arange(nphis) * 2*np.pi / nphis
-    rays = np.zeros((n_thetas * nphis, 8))
+    thetas = xp.linspace(-theta_max, theta_max, n_thetas)
+    phis = xp.arange(nphis) * 2*np.pi / nphis
+    rays = xp.zeros((n_thetas * nphis, 8))
 
-    tts, pps = np.meshgrid(thetas, phis)
+    tts, pps = xp.meshgrid(thetas, phis)
     tts = tts.ravel()
     pps = pps.ravel()
 
-    enx = np.cross(np.array([0, 1, 0]), center_ray)
-    enx = enx / np.linalg.norm(enx)
-    eny = np.cross(center_ray, enx)
+    enx = xp.cross(np.array([0, 1, 0]), center_ray)
+    enx = enx / xp.linalg.norm(enx)
+    eny = xp.cross(center_ray, enx)
 
     pt = np.array(pt).squeeze()
 
@@ -405,7 +404,7 @@ class System:
         flip direction of the optic we are considering (so typically rays now enter from the right)
         :return:
         """
-        surfaces_rev = [copy.deepcopy(self.surfaces[-ii]) for ii in range(1, len(self.surfaces) + 1)]
+        surfaces_rev = [deepcopy(self.surfaces[-ii]) for ii in range(1, len(self.surfaces) + 1)]
 
         for ii in range(len(self.surfaces)):
             surfaces_rev[ii].input_axis *= -1
@@ -436,13 +435,13 @@ class System:
 
         # specify distance between surfaces as distances between the paraxial foci
         if isinstance(other, System):
-            new_surfaces = [copy.deepcopy(s) for s in other.surfaces]
+            new_surfaces = [deepcopy(s) for s in other.surfaces]
             new_materials = other.materials
             other_stop = other.aperture_stop
             new_surfaces_by_name = other.surfaces_by_name
             new_names = other.names
         elif isinstance(other, Surface):
-            new_surfaces = [copy.deepcopy(other)]
+            new_surfaces = [deepcopy(other)]
             new_materials = []
             other_stop = None
             new_surfaces_by_name = np.array([0])
@@ -1284,9 +1283,9 @@ class ReflectingSurface(Surface):
         ds_out = mag_na * normals + mag_nc * nc
 
         rays_refracted = xp.concatenate((rays_intersection[:, :3],
-                                   ds_out,
-                                   rays_intersection[:, 6:]),
-                                  axis=1)
+                                         ds_out,
+                                         rays_intersection[:, 6:]),
+                                         axis=1)
         rays_refracted[xp.isnan(ds_out[:, 0]), :3] = xp.nan
 
         # check array was within aperture
