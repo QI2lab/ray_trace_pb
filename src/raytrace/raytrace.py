@@ -1306,7 +1306,10 @@ class ReflectingSurface(Surface):
 class FlatSurface(RefractingSurface):
     """
     Surface is defined by
-        [(x, y, z) - (cx, cy, cz)] \cdot normal = 0
+
+    .. math::
+
+        [(x, y, z) - (c_x, c_y, c_z)] \\cdot normal = 0
 
     Where the normal should point along the intended direction of ray-travel
     """
@@ -1374,7 +1377,10 @@ class FlatSurface(RefractingSurface):
 class PlaneMirror(ReflectingSurface):
     """
     Surface is defined by
-        [(x, y, z) - (cx, cy, cz)] \cdot normal = 0
+
+    .. math::
+
+        [(x, y, z) - (c_x, c_y, c_z)] \\cdot n = 0
 
     Where the normal should point along the intended direction of ray-travel
     """
@@ -1597,28 +1603,26 @@ class PerfectLens(RefractingSurface):
                   material1: Material,
                   material2: Material) -> array:
         """
-        Given a set of rays, propagate them to the Surface of this object and compute their refraction.
-        Return the update ray array with these two new ray positions
+        Given a set of rays, propagate them to the principle of this object and compute their refraction.
+        Return the update ray array with these two new ray positions.
 
         Construction: consider lens as a plane Surface distance f from FFP and BFP. Consider rays
         in the FFP. We know that an on axis ray at angle theta. We know this becomes an on-axis ray
-        at distance n*focal len * sin(theta) from the optical axis.
+        at distance :math:`n f_l \\sin \\theta` from the optical axis.
 
         Suppose we have the Fourier shift theorem perfectly satisfied, then we can use this to infer the angles
-        of the other rays, recalling that in the BFP the spatial frequency f = -xp / fl / lambda
-        e.g. for 1D case sin(theta_p) = xo/fl
+        of the other rays, recalling that in the BFP the spatial frequency :math:`f = -x_p / f_l / \\lambda`
+        e.g. for 1D case sin(theta_p) = xo/fl. So the full mapping from FFP to BFP is
+        :math:`(h, \\sin \\theta ) \\to (n_1 f_l \\sin \\theta, -h / f_l / n_2)`
+        And the front and back focal planes are located distance :math:`n_1 f` before and
+        :math:`n_2 f` after the lens respectively. This construction ensures that cascading two of these
+        lenses together satisfies the Abbe sine condition.
 
-        So the full mapping from FFP to BFP is
-        (h, sin(theta) ) -> (n1 * fl * sin(theta), -h / fl / n2)
-        And the front and back focal planes are located distance n1*f before and n2*f after the lens respectively
-
-        We can see that cascading two of these lenses together ensures the Abbe sine condition is satisfied
-
-        Note: there will be a positional discontinuity at the Surface of the lens. For example, given a beam parallel
+        Note: there will be a positional discontinuity at the surface of the lens. For example, given a beam parallel
         to the optical axis incident at height h, let's compute the height after the lens, determined by the angle
         which the beam focuses. To see this, note
-        We know theta = sin^(-1)(x / fl) and the
-        new height = f*tan(theta) = f * h / sqrt(fl^2-h^2) ~ x + 0.5 * x^3 / fl^2 + ...
+        We know :math:`\\theta = \\sin^(-1)(x / f_l)` and the
+        new height = :math:`f \\tan \\theta = f h / \\sqrt(f_l^2-h^2) \\sim x + 0.5 * x^3 / f_l^2 + ...`
         so the heights only match to first order
 
         To calculate the phase change introduced by the lens imagine the following situation: take an arbitrary
@@ -1626,24 +1630,33 @@ class PerfectLens(RefractingSurface):
         a plane wave with many parallel rays. Since this is a perfect lens, these rays come to a common focus
         (with the same phase) in the back focal plane of the lens at the position we computed above. So in the
         back focal plane all of these rays must have the same phase. For convenience, we suppose the optical
-        path length between the front and back focal planes is (n1**2 + n2**2) * f. This follows because in
-        the immersion medium the focal planes are distance n1*f and n2*f away from the lens.
+        path length between the front and back focal planes is :math:`(n_1^2 + n_2^2) f`. This follows because in
+        the immersion medium the focal planes are distance :math:`n_1 f` and :math:`n_2 f` away from the lens.
 
         If we suppose the parallel ray passing through the front focal point has OPL at this point, then in the
-        focal plane our ray has extra phase n1*h_1*sin(theta_1). The rays travel the same distance to the lens.
-        Directly after the lens, these two rays have height difference n2 * f * tan(theta_2). The path length
-        difference is n2 * f * (1 / cos(theta_2) - 1). Since the total phase difference is 0, we must have
-        lens_phase(h1, theta_1) = -n2**2 * f * (1 / cos(theta_2) - 1) - n1 * h1*sin(theta_1)
-                                = -n2**2 * f * [1 / sqrt(1 - h1^2 / f^2 / n_2^2) - 1] - n1 * h1*sin(theta_1)
+        focal plane our ray has extra phase :math:`n_1 h_1 \\sin(\\theta_1)`. The rays travel the same
+        distance to the lens. Directly after the lens, these two rays have height difference
+        :math:`n_2 f \\tan(\\theta_2)`. The path length
+        difference is :math:`n_2 f (1 / \\cos(\\theta_2) - 1)`. Since the total phase difference is 0, we must have
+
+        .. math::
+
+            \\phi(h_1, \\theta_1) &= -n_2^2 f (1 / \\cos \\theta_2 - 1) - n_1 h_1 \\sin \\theta_1
+
+                                    &= -n_2^2 f [1 / \\sqrt{1 - h_1^2 / f^2 / n_2^2} - 1] - n_1 h_1 \\sin \\theta_1
 
         In practice, this expression is not implemented directly. Rather, equal phase is imposed at the focus
 
         When considering the vectorial model, we instead talk about the ray position vector r1, the ray position
         vector relative to the focal point r1', the ray unit vector s1, and the unit vector formed by projecting
-        the optical axis direction n from s1 call it s1' = (s1 - n\cdot s1) / |s_1 - n\cdot s1|. In terms
-        of these quantities,
-        r2' = n1 * f * (s1' \cdot s1) * s1'
-        s2' = - |r1'| / (n2 * f) * (r1' / |r1'|)
+        the optical axis direction n from s1 call it :math:`s_1' = (s_1 - n\\cdot s_1) / |s_1 - n\\cdot s_1|`.
+        In terms of these quantities,
+
+        .. math::
+
+           r_2' &= n_1 f (s_1' \\cdot s_1) s_1'
+
+           s_2' &= - |r_1'| / (n_2 f) (r_1' / |r_1'|)
 
         :param rays: nsurfaces x nrays x 8
         :param material1: Material on first side of Surface
